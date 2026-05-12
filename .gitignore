@@ -7,3 +7,7 @@ coverage/
 .env*
 !.env.example
 KANDANG 2.xlsx
+backend
+.backend
+server.js
+database.db
