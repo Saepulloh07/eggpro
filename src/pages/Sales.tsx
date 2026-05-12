@@ -30,12 +30,13 @@ import { useGlobalData } from '../GlobalContext';
 
 export default function Sales() {
   const { activeHouse } = useHouse();
-  const { saveSale, salesLogs, productionLogs, inventory, updateInventory, farmSettings } = useGlobalData();
+  const { saveSale, salesLogs, productionLogs, inventory, updateInventory, farmSettings, accounts } = useGlobalData();
   const [activeCategory, setActiveCategory] = useState<string>(EggCategory.BM);
   const [quantity, setQuantity] = useState(0);
   const [isFree, setIsFree] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [buyerType, setBuyerType] = useState('REGULAR');
+  const [selectedAccountId, setSelectedAccountId] = useState('');
 
 
   // Load master prices from FarmSettings
@@ -142,7 +143,7 @@ export default function Sales() {
             total: totalPrice,
             isFree,
             customer: customerName.trim() || 'Umum'
-        });
+        }, selectedAccountId);
 
         Swal.fire({ title: 'Transaksi Berhasil!', text: `Penjualan ${quantity.toLocaleString()} butir ${activeCategory} berhasil dicatat.`, icon: 'success', confirmButtonColor: '#0f172a' });
         setQuantity(0);
@@ -279,6 +280,23 @@ export default function Sales() {
                     className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-medium focus:outline-none focus:border-amber-500 transition-all"
                   />
                 </div>
+
+                {!isFree && (
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Terima ke Rekening</label>
+                    <select
+                      required
+                      value={selectedAccountId}
+                      onChange={(e) => setSelectedAccountId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 transition-all"
+                    >
+                      <option value="">Pilih Rekening Penerima</option>
+                      {accounts.filter(a => a.isCashOrBank).map(a => (
+                        <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div className="bg-slate-900 p-5 text-white shadow-xl relative overflow-hidden border border-slate-800">
                     <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none transform translate-x-4 -translate-y-4">

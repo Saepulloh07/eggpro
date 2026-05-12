@@ -10,14 +10,14 @@ export enum UserRole {
 }
 
 export enum EggCategory {
-  BM = 'BM',
-  KRC = 'KRC',
-  KRC_RETAK = 'KRC Retak',
+  BM = 'Remban',
+  KRC = 'Bujang',
+  KRC_RETAK = 'Bujang Retak',
   KS = 'KS',
   KS_RETAK = 'KS Retak',
-  PELOR = 'PELOR',
-  RETAK = 'RETAK',
-  PECAH = 'PECAH',
+  PELOR = 'Pelor',
+  RETAK = 'Retak',
+  PECAH = 'Pecah',
 }
 
 // NEW: Cause of death for mortality tracking
@@ -25,6 +25,152 @@ export enum MortalityCause {
   DISEASE = 'DISEASE',     // Penyakit
   CULLED = 'CULLED',       // Afkir (voluntary removal)
   OTHER = 'OTHER',         // Lainnya
+}
+
+// ACCOUNTING TYPES
+export enum AccountCategory {
+  ASSET = 'ASSET',
+  LIABILITY = 'LIABILITY',
+  EQUITY = 'EQUITY',
+  REVENUE = 'REVENUE',
+  EXPENSE = 'EXPENSE'
+}
+
+// NORMAL BALANCE direction (DEBIT = increases with debit, CREDIT = increases with credit)
+export enum NormalBalance {
+  DEBIT = 'DEBIT',
+  CREDIT = 'CREDIT'
+}
+
+export interface Account {
+  id: string;
+  code: string;
+  name: string;
+  category: AccountCategory;
+  normalBalance?: NormalBalance; // auto-derived from category if not set
+  isCashOrBank?: boolean;
+  parentId?: string;   // for hierarchical COA (sub-accounts)
+  isSystem?: boolean;  // protected system accounts, cannot be deleted
+}
+
+export interface JournalEntry {
+  id: string;
+  date: string;
+  reference: string;
+  description: string;
+}
+
+export interface JournalLine {
+  id: string;
+  journalId: string;
+  accountId: string;
+  debit: number;
+  credit: number;
+}
+
+// WAREHOUSE TYPES
+export enum StockMutationType {
+  PURCHASE = 'PURCHASE',
+  USAGE = 'USAGE',
+  TRANSFER = 'TRANSFER',
+  ADJUSTMENT = 'ADJUSTMENT',
+  PRODUCTION = 'PRODUCTION',
+  SALE = 'SALE',
+  RETURN = 'RETURN',
+}
+
+export interface StockMutation {
+  id: string;
+  date: string;
+  itemId: string;
+  type: StockMutationType;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  sourceLocation: 'CENTRAL' | string;
+  targetLocation?: 'CENTRAL' | string;
+  paidByHouseId?: 'CENTRAL' | string; // NEW: Siapa yang bayar
+  usedByHouseId?: 'CENTRAL' | string; // NEW: Siapa yang pakai
+  reference: string;
+  notes?: string;
+}
+
+export enum PaymentMethod {
+  CASH = 'CASH',
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  HUTANG = 'HUTANG', // AP
+  PIUTANG = 'PIUTANG' // AR
+}
+
+export enum PaymentStatus {
+  LUNAS = 'LUNAS',
+  HUTANG = 'HUTANG',
+  PIUTANG = 'PIUTANG'
+}
+
+// Payment history for AP/AR records
+export interface PaymentHistoryEntry {
+  id: string;
+  date: string;
+  amount: number;
+  accountId: string; // which account was used to pay
+  notes?: string;
+}
+
+export interface APARRecord {
+  id: string;
+  type: 'HUTANG' | 'PIUTANG'; // AP | AR
+  entityName: string; // Supplier / Customer
+  description?: string;
+  amount: number;
+  remainingAmount: number;
+  dueDate: string;
+  createdAt: string;
+  status: 'OPEN' | 'PARTIAL' | 'CLOSED';
+  relatedTransactionId?: string;
+  paymentHistory: PaymentHistoryEntry[];
+}
+
+// Operational Expense (non-inventory daily expenses)
+export enum ExpenseCategory {
+  LISTRIK = 'Listrik',
+  AIR = 'Air / PDAM',
+  BBM = 'BBM / Transportasi',
+  WIFI = 'Internet / WiFi',
+  ATK = 'Alat Tulis',
+  KONSUMSI = 'Konsumsi / Tamu',
+  TENAGA_KERJA = 'Tenaga Kerja',
+  SEWA = 'Sewa / Kontrak',
+  LAINNYA = 'Lain-lain',
+}
+
+export interface OperationalExpense {
+  id: string;
+  houseId?: string;
+  date: string;
+  category: ExpenseCategory | string;
+  description: string;
+  amount: number;
+  accountId: string;       // akun beban yang didebit
+  paymentAccountId: string; // akun kas/bank yang dikredit
+  receiptUrl?: string;     // foto nota (base64 or URL)
+  journalId?: string;
+}
+
+// Sinking Fund
+export enum SinkingFundType {
+  DOC = 'DOC Baru',
+  RENOVATION = 'Peremajaan Kandang',
+  RESERVE = 'Dana Cadangan',
+}
+
+export interface SinkingFundAllocation {
+  id: string;
+  date: string;
+  type: SinkingFundType;
+  amount: number;
+  notes?: string;
+  journalId?: string;
 }
 
 export interface PoultryHouse {
@@ -37,6 +183,7 @@ export interface PoultryHouse {
   managerId?: string;         // NEW: Penanggungjawab
   purchaseDate?: string;      // NEW: For depreciation calculation
   purchasePrice?: number;     // NEW: For depreciation calculation
+  workerCount?: number;       // NEW: Number of workers for auto egg allowance
 }
 
 export interface Supplier {
@@ -59,6 +206,7 @@ export enum ItemType {
   EGG_STOCK = 'EGG_STOCK',          // Stok telur per kategori (BM, KRC, etc.)
   MEDICINE = 'MEDICINE',
   VACCINE = 'VACCINE',
+  NON_CORE = 'NON_CORE',             // Karung, Kotoran, Afkir, Jagung (for sale)
   OTHER = 'OTHER'
 }
 
@@ -79,6 +227,7 @@ export interface DailyProduction {
   date: string;
   eggCount: number;
   eggWeight: number;
+  abnormalEggCount?: number;       // Telur pecah/abnormal
   categoryBreakdown: Record<EggCategory, number>;
   feedConsumed: number;
   feedInventoryItemId: string;     // NEW: which inventory feed item was consumed
@@ -91,21 +240,21 @@ export interface DailyProduction {
 
 export interface InventoryItem {
   id: string;
-  houseId?: string;              // optional – some items are farm-wide
+  houseId?: string;              // optional – some items are farm-wide. If empty or 'CENTRAL', it's in Central Warehouse.
   name: string;
   type: ItemType;
   quantity: number;
   unit: string;
   reorderPoint: number;
-  lastPrice: number;
+  lastPrice: number;             // Represents average cost (Average Cost method)
   eggCategory?: EggCategory;     // For EGG_STOCK items — which egg category this represents
 }
 
 export interface Sale {
   id: string;
-  houseId: string;
+  houseId: string; // can be 'CENTRAL' for non-core
   date: string;
-  category: EggCategory | 'NON_EGG';
+  category: EggCategory | 'NON_EGG' | 'NON_CORE';
   quantity: number;
   pricePerUnit: number;
   totalPrice: number;
@@ -208,8 +357,6 @@ export interface PopulationMutation {
   transactionId?: string;    // Linked financial record
 }
 
-
-
 // Feed Recipe (Formulasi Ransum)
 export interface RecipeIngredient {
   inventoryItemId: string;
@@ -270,6 +417,13 @@ export interface FarmSettings {
   layerValueTotal: number;           // nilai ayam (pullet)
   layerLifeYears: number;            // umur ekonomis ayam (dalam tahun atau bulan)
   layerSalvageValue: number;         // nilai sisa/afkir ayam
+  
+  // NEW FEATURES
+  workerEggAllowancePerDay: number;  // default 5
+  abnormalEggTolerancePct: number;   // default 2%
+  sinkingFundDocPct: number;         // Sinking fund untuk DOC (%)
+  sinkingFundHousePct: number;       // Sinking fund untuk Peremajaan (%)
+  sinkingFundReservePct: number;     // Sinking fund untuk Dana Cadangan (%)
 }
 
 export const DEFAULT_FARM_SETTINGS: FarmSettings = {
@@ -282,14 +436,14 @@ export const DEFAULT_FARM_SETTINGS: FarmSettings = {
   units: ['kg', 'liter', 'ml', 'papan', 'butir', 'sak'],
   wasteFreePercentage: 3,
   masterPrices: [
-    { id: 'BM', name: 'BM', price: 28500 },
-    { id: 'KRC', name: 'KRC', price: 27000 },
-    { id: 'KRC_RETAK', name: 'KRC Retak', price: 25000 },
+    { id: 'BM', name: 'Remban', price: 28500 },
+    { id: 'KRC', name: 'Bujang', price: 27000 },
+    { id: 'KRC_RETAK', name: 'Bujang Retak', price: 25000 },
     { id: 'KS', name: 'KS', price: 25000 },
     { id: 'KS_RETAK', name: 'KS Retak', price: 22000 },
-    { id: 'PELOR', name: 'PELOR', price: 20000 },
-    { id: 'RETAK', name: 'RETAK', price: 15000 },
-    { id: 'PECAH', name: 'PECAH', price: 5000 },
+    { id: 'PELOR', name: 'Pelor', price: 20000 },
+    { id: 'RETAK', name: 'Retak', price: 15000 },
+    { id: 'PECAH', name: 'Pecah', price: 5000 },
     { id: 'NON_EGG', name: 'Limbah/Karung', price: 5000 }
   ],
   suppliers: [],
@@ -303,4 +457,9 @@ export const DEFAULT_FARM_SETTINGS: FarmSettings = {
   layerValueTotal: 100000000,
   layerLifeYears: 2,
   layerSalvageValue: 20000000,
+  workerEggAllowancePerDay: 5,
+  abnormalEggTolerancePct: 2,
+  sinkingFundDocPct: 10,
+  sinkingFundHousePct: 5,
+  sinkingFundReservePct: 5,
 };

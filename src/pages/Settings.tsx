@@ -16,11 +16,14 @@ import {
   Layout as LayoutIcon,
   Save,
   Shield,
-  Search
+  Search,
+  CreditCard,
+  BookOpen,
+  Download
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserRole, User, PoultryHouse, FlockBatch } from '../types';
+import { UserRole, User, PoultryHouse, FlockBatch, Account, AccountCategory } from '../types';
 import Swal from 'sweetalert2';
 import { useHouse } from '../HouseContext';
 import { useApp } from '../AppContext';
@@ -33,7 +36,7 @@ export default function Settings() {
   const { houses, addHouse, updateHouse, deleteHouse, selectedHouseId } = useHouse();
   const { users, addUser, updateUser, deleteUser, sidebarPermissions, updatePermissions } = useApp();
   const { flocks, addFlock, updateFlock, deleteFlock } = useFlock();
-  const { farmSettings, saveFarmSettings } = useGlobalData();
+  const { farmSettings, saveFarmSettings, accounts, addAccount, updateAccount, deleteAccount } = useGlobalData();
   
   // --- House Management State ---
   const [isHouseModalOpen, setIsHouseModalOpen] = useState(false);
@@ -57,6 +60,40 @@ export default function Settings() {
   // --- Supplier State ---
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<any | null>(null);
+
+  // --- Accounts State ---
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [newAccountCategory, setNewAccountCategory] = useState<AccountCategory>(AccountCategory.ASSET);
+
+  // --- Auto COA Code Generator ---
+  const COA_PREFIX: Record<AccountCategory, number> = {
+    [AccountCategory.ASSET]: 100,
+    [AccountCategory.LIABILITY]: 200,
+    [AccountCategory.EQUITY]: 300,
+    [AccountCategory.REVENUE]: 400,
+    [AccountCategory.EXPENSE]: 500,
+  };
+
+  const generateNextCOACode = (category: AccountCategory): string => {
+    const prefix = COA_PREFIX[category];
+    const existing = accounts
+      .filter(a => {
+        const num = parseInt(a.code);
+        return num >= prefix && num < prefix + 100;
+      })
+      .map(a => parseInt(a.code))
+      .sort((a, b) => a - b);
+    // Find next gap starting from prefix+1
+    let next = prefix + 1;
+    for (const code of existing) {
+      if (code === next) next++;
+      else break;
+    }
+    return String(next);
+  };
+
+  const autoCode = editingAccount ? editingAccount.code : generateNextCOACode(newAccountCategory);
 
   // --- Targets & Tolerances Local State (for explicit Save) ---
   const [targetForm, setTargetForm] = React.useState({
@@ -82,6 +119,7 @@ export default function Settings() {
     { id: 'PROFILE', label: 'Profil Farm (User)', icon: Smartphone },
     { id: 'SECURITY', label: 'Keamanan & Role', icon: ShieldCheck },
     { id: 'MASTER', label: 'Master Data & Standar', icon: Database },
+    { id: 'ACCOUNTING', label: 'Rekening & Akuntansi', icon: CreditCard },
     { id: 'SUPPLIER', label: 'Mitra & Supplier', icon: LayoutIcon },
     { id: 'DATA', label: 'Backup & Arsip', icon: RotateCcw },
   ];
@@ -168,6 +206,24 @@ export default function Settings() {
     }
     Swal.fire({ title: 'Berhasil!', text: 'Data supplier telah disimpan.', icon: 'success', confirmButtonColor: '#0f172a' });
     setIsSupplierModalOpen(false);
+  };
+
+  const handleSaveAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const code = formData.get('code') as string;
+    const name = formData.get('name') as string;
+    const category = formData.get('category') as AccountCategory;
+    const isCashOrBank = formData.get('isCashOrBank') === 'on';
+
+    if (editingAccount) {
+      updateAccount(editingAccount.id, { code, name, category, isCashOrBank });
+    } else {
+      addAccount({ code, name, category, isCashOrBank });
+    }
+    Swal.fire({ title: 'Berhasil!', text: 'Data rekening telah disimpan.', icon: 'success', confirmButtonColor: '#0f172a' });
+    setIsAccountModalOpen(false);
+    setNewAccountCategory(AccountCategory.ASSET);
   };
 
   const handleSavePrice = (e: React.FormEvent) => {
@@ -942,6 +998,119 @@ export default function Settings() {
                     </motion.div>
                 )}
 
+                {activeSection === 'ACCOUNTING' && (
+                    <motion.div
+                        initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
+                        key="accounting" className="space-y-8"
+                    >
+                        <div className="bg-white p-8 border border-slate-200 shadow-sm relative">
+                            <div className="flex items-center justify-between mb-8">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight italic">Manajemen Rekening & Akun</h3>
+                                    <p className="text-xs text-slate-500 mt-1 uppercase font-bold italic tracking-tighter opacity-70">Kelola daftar rekening bank, kas, dan akun lainnya.</p>
+                                </div>
+                                <button 
+                                    onClick={() => { setEditingAccount(null); setNewAccountCategory(AccountCategory.ASSET); setIsAccountModalOpen(true); }}
+                                    className="bg-slate-900 text-white p-3 rounded-full hover:bg-slate-800 transition-all shadow-lg"
+                                >
+                                    <Plus size={20} />
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {accounts.map((acc) => (
+                                    <div key={acc.id} className="p-6 bg-slate-50 border border-slate-100 hover:border-amber-500 transition-all group relative">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="w-10 h-10 bg-white border border-slate-200 rounded-sm flex items-center justify-center text-slate-400 group-hover:bg-slate-900 group-hover:text-amber-500 transition-all">
+                                                    <CreditCard size={18} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-[12px] font-black uppercase text-slate-900 tracking-tighter italic">{acc.name}</p>
+                                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Kode: {acc.code} · {acc.category}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex space-x-2">
+                                                <button onClick={() => { setEditingAccount(acc); setIsAccountModalOpen(true); }} className="p-1.5 bg-white border border-slate-200 text-slate-400 group-hover:text-amber-500"><Edit2 size={12} /></button>
+                                                <button onClick={() => {
+                                                    Swal.fire({
+                                                        title: 'Hapus Rekening?',
+                                                        text: 'Aksi ini tidak dapat dibatalkan.',
+                                                        icon: 'warning',
+                                                        showCancelButton: true,
+                                                        confirmButtonColor: '#e11d48'
+                                                    }).then(res => { if (res.isConfirmed) deleteAccount(acc.id); });
+                                                }} className="p-1.5 bg-white border border-slate-200 text-slate-400 hover:text-rose-600"><Trash2 size={12} /></button>
+                                            </div>
+                                        </div>
+                                        {acc.isCashOrBank && (
+                                            <span className="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-1 uppercase font-bold tracking-widest rounded-sm">Kas & Bank (Bisa dipilih saat transaksi)</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <Modal isOpen={isAccountModalOpen} onClose={() => setIsAccountModalOpen(false)} title={editingAccount ? `Edit Akun: ${editingAccount.name}` : "Tambah Akun / Rekening Baru"}>
+                            <form onSubmit={handleSaveAccount} className="space-y-6">
+                                {/* Category Selector — Controls auto code */}
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Kategori Akun</label>
+                                    <select
+                                        name="category"
+                                        value={editingAccount?.category || newAccountCategory}
+                                        onChange={(e) => {
+                                            const cat = e.target.value as AccountCategory;
+                                            if (!editingAccount) setNewAccountCategory(cat);
+                                        }}
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                                    >
+                                        <option value={AccountCategory.ASSET}>1xx — ASSET (Harta / Kas / Bank)</option>
+                                        <option value={AccountCategory.LIABILITY}>2xx — LIABILITY (Hutang / Kewajiban)</option>
+                                        <option value={AccountCategory.EQUITY}>3xx — EQUITY (Modal / Dana Cadangan)</option>
+                                        <option value={AccountCategory.REVENUE}>4xx — REVENUE (Pendapatan)</option>
+                                        <option value={AccountCategory.EXPENSE}>5xx — EXPENSE (Beban / Biaya)</option>
+                                    </select>
+                                </div>
+                                {/* Auto COA Code Display */}
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Kode Akun COA (Otomatis)</label>
+                                    <div className="relative">
+                                        <input
+                                            name="code"
+                                            required
+                                            value={autoCode}
+                                            readOnly={!editingAccount}
+                                            onChange={() => {}}
+                                            className="w-full bg-amber-50 border-2 border-amber-300 rounded-sm px-4 py-3 text-sm font-black text-amber-800 focus:outline-none font-mono tracking-widest"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-amber-500 font-black uppercase tracking-widest">
+                                            {editingAccount ? 'Dapat diubah' : 'Auto-generate'}
+                                        </span>
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 mt-1">Kode dibuat otomatis berdasarkan urutan standar COA peternakan. ASSET=1xx, LIAB=2xx, EQ=3xx, REV=4xx, EXP=5xx.</p>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Nama Akun / Rekening</label>
+                                    <input name="name" required defaultValue={editingAccount?.name} placeholder="Cth: Bank BRI, Kas Admin, Beban Vaksin" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                                </div>
+                                <div>
+                                    <label className="flex items-center space-x-3 p-4 border border-slate-200 rounded-sm cursor-pointer hover:bg-slate-50">
+                                        <input name="isCashOrBank" type="checkbox" defaultChecked={editingAccount?.isCashOrBank} className="w-4 h-4 text-amber-500 rounded border-slate-300 focus:ring-amber-500" />
+                                        <div>
+                                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-900">Gunakan sebagai Metode Pembayaran</p>
+                                            <p className="text-[9px] text-slate-400">Centang jika ini adalah Kas Tunai atau Rekening Bank untuk transaksi.</p>
+                                        </div>
+                                    </label>
+                                </div>
+                                <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] shadow-xl">
+                                    Simpan Akun
+                                </button>
+                            </form>
+                        </Modal>
+                    </motion.div>
+                )}
+
                 {activeSection === 'SUPPLIER' && (
                     <motion.div
                         initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
@@ -1019,6 +1188,86 @@ export default function Settings() {
                                 </button>
                             </form>
                         </Modal>
+                    </motion.div>
+                )}
+
+                {activeSection === 'DATA' && (
+                    <motion.div
+                        initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
+                        key="data" className="space-y-8"
+                    >
+                        <div className="bg-white p-8 border border-slate-200 shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight italic mb-2">Backup & Arsip Data</h3>
+                            <p className="text-xs text-slate-500 uppercase font-bold italic tracking-tighter opacity-70 mb-8">Ekspor data Anda untuk cadangan atau analisis eksternal.</p>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="p-6 bg-slate-50 border border-slate-100 space-y-4">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="p-2 bg-white border border-slate-200 rounded-sm text-slate-400">
+                                            <Download size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[12px] font-black uppercase text-slate-900 tracking-tighter italic">Ekspor Backup (JSON)</p>
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Format data mentah untuk sistem.</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            const data = {
+                                                productionLogs: JSON.parse(localStorage.getItem('poultry_prod_logs') || '[]'),
+                                                salesLogs: JSON.parse(localStorage.getItem('poultry_sales_logs') || '[]'),
+                                                transactions: JSON.parse(localStorage.getItem('poultry_transactions') || '[]'),
+                                                inventory: JSON.parse(localStorage.getItem('poultry_inventory_v2') || '[]'),
+                                                accounts: JSON.parse(localStorage.getItem('poultry_accounts') || '[]'),
+                                                journals: JSON.parse(localStorage.getItem('poultry_journals') || '[]'),
+                                                journalLines: JSON.parse(localStorage.getItem('poultry_journal_lines') || '[]')
+                                            };
+                                            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `backup_farm_${new Date().toISOString().slice(0,10)}.json`;
+                                            a.click();
+                                        }}
+                                        className="w-full bg-slate-900 text-white py-3 rounded-sm font-bold text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all"
+                                    >
+                                        Download Backup
+                                    </button>
+                                </div>
+
+                                <div className="p-6 bg-rose-50 border border-rose-100 space-y-4">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="p-2 bg-white border border-rose-200 rounded-sm text-rose-400">
+                                            <RotateCcw size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[12px] font-black uppercase text-rose-900 tracking-tighter italic">Reset Semua Data</p>
+                                            <p className="text-[9px] text-rose-400 font-bold uppercase tracking-widest mt-0.5">Hapus seluruh data permanen.</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            Swal.fire({
+                                                title: 'Hapus Semua Data?',
+                                                text: 'Seluruh histori transaksi, produksi, dan inventaris akan dihapus permanen!',
+                                                icon: 'warning',
+                                                showCancelButton: true,
+                                                confirmButtonColor: '#e11d48',
+                                                confirmButtonText: 'Ya, Hapus Semua'
+                                            }).then(res => {
+                                                if (res.isConfirmed) {
+                                                    localStorage.clear();
+                                                    window.location.reload();
+                                                }
+                                            });
+                                        }}
+                                        className="w-full bg-rose-600 text-white py-3 rounded-sm font-bold text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all"
+                                    >
+                                        Hapus Permanen
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

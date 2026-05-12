@@ -47,17 +47,48 @@ export default function Production() {
 
   // Form state
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [eggCount, setEggCount] = useState(0);
   const [mortality, setMortality] = useState(0);
   const [mortalityCause, setMortalityCause] = useState<MortalityCause>(MortalityCause.DISEASE);
   const [feedConsumed, setFeedConsumed] = useState(0);
   const [feedInventoryItemId, setFeedInventoryItemId] = useState('');
   const [discardedEggs, setDiscardedEggs] = useState(0);
+  
   const [breakdown, setBreakdown] = useState<Record<string, number>>({
     [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0,
     [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0,
     [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0,
   });
+
+  const handleBreakdownChange = (cat: string, val: number) =>
+    setBreakdown(prev => ({ ...prev, [cat]: val }));
+
+  const totalBreakdownButir = useMemo(() =>
+    Object.values(breakdown).reduce((a: number, b: unknown) => a + (b as number), 0), [breakdown]);
+
+  // Auto calculate weight in KG based on standard
+  const eggWeight = useMemo(() => {
+    let totalKg = 0;
+    // Remban: ~19.75 kg / 300
+    totalKg += (breakdown[EggCategory.BM] || 0) * (19.75 / 300);
+    // Bujang: ~18.75 kg / 300
+    totalKg += (breakdown[EggCategory.KRC] || 0) * (18.75 / 300);
+    // KS: ~17 kg / 300
+    totalKg += (breakdown[EggCategory.KS] || 0) * (17 / 300);
+    // Pelor: ~15 kg / 300
+    totalKg += (breakdown[EggCategory.PELOR] || 0) * (15 / 300);
+    // Retak/Pecah/Bujang Retak/KS Retak: assume ~18 kg / 300
+    const others = (breakdown[EggCategory.RETAK] || 0) + 
+                   (breakdown[EggCategory.PECAH] || 0) + 
+                   (breakdown[EggCategory.KRC_RETAK] || 0) + 
+                   (breakdown[EggCategory.KS_RETAK] || 0);
+    totalKg += others * (18 / 300);
+    return totalKg;
+  }, [breakdown]);
+
+  const eggCount = totalBreakdownButir;
+  const pecahCount = breakdown[EggCategory.PECAH] || 0;
+  const retakCount = (breakdown[EggCategory.RETAK] || 0) + (breakdown[EggCategory.KRC_RETAK] || 0) + (breakdown[EggCategory.KS_RETAK] || 0);
+
 
   // Feed items from inventory
   const feedItems = useMemo(() =>
@@ -83,18 +114,20 @@ export default function Production() {
     return calculateAge(activeBatch.arrivalDate, activeBatch.arrivalAgeWeeks, date);
   }, [activeBatch, date]);
 
-  const handleBreakdownChange = (cat: string, val: number) =>
-    setBreakdown(prev => ({ ...prev, [cat]: val }));
+  // Abnormal Ratios
+  const abnormalRatio = useMemo(() => {
+    if (eggCount === 0) return 0;
+    return ((pecahCount + retakCount + discardedEggs) / eggCount) * 100;
+  }, [eggCount, pecahCount, retakCount, discardedEggs]);
 
-  const totalBreakdownButir = useMemo(() =>
-    Object.values(breakdown).reduce((a: number, b: unknown) => a + (b as number), 0), [breakdown]);
+  const isAbnormalHigh = abnormalRatio > (farmSettings.abnormalEggTolerancePct || 2);
 
-  // Live FCR
+  // Live FCR (Feed vs Egg Weight)
   const currentFCR = useMemo(() => {
-    if (totalBreakdownButir > 0 && feedConsumed > 0)
-      return (feedConsumed / totalBreakdownButir).toFixed(2);
+    if (eggWeight > 0 && feedConsumed > 0)
+      return (feedConsumed / eggWeight).toFixed(2);
     return '0.00';
-  }, [feedConsumed, totalBreakdownButir]);
+  }, [feedConsumed, eggWeight]);
 
   // HDP calculation
   const hdp = useMemo(() => {
@@ -150,11 +183,13 @@ export default function Production() {
           houseId: activeHouse?.id || '',
           date,
           eggCount,
+          eggWeight, // Added
           feedConsumed,
           feedInventoryItemId: effectiveFeedId,
           mortality,
           mortalityCause: mortality > 0 ? mortalityCause : undefined,
           discardedEggs,
+          abnormalEggCount: pecahCount + retakCount + discardedEggs,
           breakdown,
           totalButir: totalBreakdownButir,
           inputTime: new Date().toISOString(),
@@ -180,7 +215,7 @@ export default function Production() {
           Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan & inventori diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
         }
 
-        setEggCount(0); setMortality(0); setFeedConsumed(0); setDiscardedEggs(0);
+        setMortality(0); setFeedConsumed(0); setDiscardedEggs(0);
         setBreakdown({ [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0, [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0, [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0 });
       }
     });
@@ -188,7 +223,7 @@ export default function Production() {
 
   const handleReset = () => {
     Swal.fire({ title: 'Reset Form?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#e11d48', confirmButtonText: 'Reset' })
-      .then(r => { if (r.isConfirmed) { setEggCount(0); setMortality(0); setFeedConsumed(0); setDiscardedEggs(0); } });
+      .then(r => { if (r.isConfirmed) { setMortality(0); setFeedConsumed(0); setDiscardedEggs(0); setBreakdown({ [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0, [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0, [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0 }); } });
   };
 
   const houseProdLogs = useMemo(() => productionLogs
@@ -256,10 +291,10 @@ export default function Production() {
                           <td className="px-3 py-3 whitespace-nowrap">
                             <span className="flex items-center gap-1 text-slate-600 font-bold"><UserIcon size={10} />{log.inputBy || '-'}</span>
                           </td>
-                          <td className="px-3 py-3 font-bold text-slate-900">{log.eggCount.toLocaleString()}</td>
-                          <td className="px-3 py-3 font-bold text-emerald-600">{(log.totalButir ?? (log as any).totalKg ?? 0).toLocaleString()}</td>
+                          <td className="px-3 py-3 font-bold text-slate-900">{log.totalButir.toLocaleString()}</td>
+                          <td className="px-3 py-3 font-bold text-emerald-600">{(log.eggWeight ?? 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} kg</td>
                           <td className="px-3 py-3">{log.feedConsumed}</td>
-                          <td className="px-3 py-3 font-bold text-amber-600">{fcr}</td>
+                          <td className="px-3 py-3 font-bold text-amber-600">{(log.feedConsumed / (log.eggWeight || 1)).toFixed(2)}</td>
                           <td className="px-3 py-3 font-bold text-rose-500">{log.mortality > 0 ? log.mortality : '-'}</td>
                           <td className="px-3 py-3 font-bold">{hdp}%</td>
                           <td className="px-3 py-3 text-slate-400">{log.mortalityCause ? MORTALITY_CAUSE_LABELS[log.mortalityCause] : '-'}</td>
@@ -302,9 +337,9 @@ export default function Production() {
         {/* FCR Live */}
         <div className="p-4 bg-slate-900 border border-slate-800 shadow-sm relative overflow-hidden">
           <Activity size={40} className="absolute right-2 top-2 opacity-[0.07] text-amber-500 hidden sm:block" />
-          <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500 mb-1">FCR Live</p>
+          <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500 mb-1">FCR Hari Ini</p>
           <p className="text-xl lg:text-2xl font-black italic text-white">{currentFCR}</p>
-          <p className="text-[9px] text-slate-500 font-bold mt-1">Cum: {cumulativeFCR.toFixed(2)}</p>
+          <p className="text-[9px] text-slate-500 font-bold mt-1">Standar FCR: {farmSettings.targetFCR || 2.1}</p>
         </div>
 
         {/* Feed Intake per Bird */}
@@ -326,10 +361,11 @@ export default function Production() {
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm focus:outline-none focus:border-amber-500" />
             </div>
 
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Total Produksi (Butir)</label>
-              <input type="number" placeholder="0" value={eggCount || ''} onChange={e => setEggCount(Number(e.target.value))}
-                className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-sm">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block mb-2">Total Berat Telur (kg) — Auto-kalkulasi</label>
+              <input type="number" readOnly value={eggWeight.toFixed(2)}
+                className="w-full bg-amber-100/50 border border-amber-300 rounded-sm px-4 py-3 text-sm font-black text-amber-900 focus:outline-none" />
+              <p className="text-[9px] text-amber-600 mt-2 leading-relaxed">Berat dikalkulasi otomatis dari standar bobot per peti (300 butir): Remban (19.75kg), Bujang (18.75kg), KS (17kg), Pelor (15kg).</p>
             </div>
 
             {/* FIX #1: Feed Selector */}
@@ -398,20 +434,33 @@ export default function Production() {
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
               <div>
-                <h3 className="font-black text-base text-slate-800 uppercase tracking-tighter italic">Klasifikasi Telur</h3>
-                <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest mt-1">Auto-masuk ke Stok Gudang</p>
+                <h3 className="font-black text-base text-slate-800 uppercase tracking-tighter italic">Input Klasifikasi Telur (Butir)</h3>
+                <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest mt-1">Masukkan jumlah butir untuk tiap kategori</p>
               </div>
               <div className="px-3 py-1 bg-amber-50 border border-amber-200 text-[10px] font-black text-amber-700 self-start sm:self-center">
                 TOTAL: {totalBreakdownButir.toLocaleString()} BUTIR
               </div>
             </div>
 
+            {isAbnormalHigh && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-rose-50 border border-rose-200 p-4 mb-6">
+                    <div className="flex items-center gap-2 mb-1">
+                        <AlertTriangle size={16} className="text-rose-600" />
+                        <h4 className="text-rose-800 font-bold text-sm uppercase tracking-tight">Peringatan: Abnormalitas Tinggi</h4>
+                    </div>
+                    <p className="text-rose-600 text-xs">
+                        Tingkat telur pecah/abnormal mencapai <b>{abnormalRatio.toFixed(1)}%</b>. 
+                        Batas toleransi adalah <b>{farmSettings.abnormalEggTolerancePct || 2}%</b>. 
+                        Periksa nutrisi pakan atau stres pada ayam.
+                    </p>
+                </motion.div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {Object.values(EggCategory).map(cat => (
                 <div key={cat} className="space-y-1">
                   <div className="flex justify-between items-end">
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">{cat}</span>
-                    <span className="text-[9px] text-slate-400 italic">{getEggCategoryRange(cat)}</span>
                   </div>
                   <div className="relative">
                     <input

@@ -21,14 +21,14 @@ export function calculateHDP(totalEggs: number, liveBirds: number) {
 
 export function getEggCategoryRange(category: string) {
   switch (category) {
-    case 'BM': return 'Besar/Rembah';
-    case 'KRC': return 'Kecil/Kandang';
-    case 'KRC Retak': return 'Kecil Retak';
-    case 'KS': return 'Standar/KS';
+    case 'Remban': case 'BM': return 'Remban (19.5 - 20 kg)';
+    case 'Bujang': case 'KRC': return 'Bujang (18 - 19.5 kg)';
+    case 'Bujang Retak': case 'KRC Retak': return 'Bujang Retak';
+    case 'KS': return 'KS (16 - 18 kg)';
     case 'KS Retak': return 'KS Retak';
-    case 'PELOR': return 'Pelor (< 16 kg)';
-    case 'RETAK': return 'Telur Retak';
-    case 'PECAH': return 'Abnormal/Pecah';
+    case 'Pelor': case 'PELOR': return 'Pelor (< 16 kg)';
+    case 'Retak': case 'RETAK': return 'Telur Retak';
+    case 'Pecah': case 'PECAH': return 'Abnormal/Pecah';
     default: return '';
   }
 }

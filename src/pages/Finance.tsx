@@ -21,7 +21,29 @@ import {
     ShoppingCart,
     Edit2,
     ChevronLeft,
-    ChevronRight
+    ChevronRight,
+    Egg,
+    Coins,
+    ClipboardList,
+    Building2,
+    BookCopy,
+    BarChart3,
+    Scale,
+    TrendingUp,
+    TrendingDown,
+    CircleDollarSign,
+    LayoutDashboard,
+    Zap,
+    Banknote,
+    RefreshCw,
+    Bird,
+    Home,
+    PiggyBank,
+    BarChart2,
+    Calculator,
+    AlertTriangle,
+    CheckCircle,
+    XCircle
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,14 +55,18 @@ import { saveAs } from 'file-saver';
 import { useHouse } from '../HouseContext';
 import { useGlobalData } from '../GlobalContext';
 import { useFlock } from '../FlockContext';
-import { EggCategory, Asset } from '../types';
+import { EggCategory, Asset, AccountCategory, ExpenseCategory, SinkingFundType } from '../types';
 
 export default function Finance() {
     const { activeHouse } = useHouse();
     const { getActiveFlockByHouse } = useFlock();
-    const { productionLogs, salesLogs, transactions, addModalAwal, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction } = useGlobalData();
+    const { productionLogs, salesLogs, transactions, addModalAwal, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction, journalEntries, journalLines, apArRecords, accounts, addAPARRecord, updateAPARRecord, addOperationalExpenseRecord, operationalExpenses, sinkingFundAllocations, realizeSinkingFund, getTrialBalance, getAccountBalance } = useGlobalData();
 
-    const [activeTab, setActiveTab] = useState<'BUKU_TELUR' | 'BUKU_TRANSAKSI' | 'ASET'>('BUKU_TELUR');
+    const [activeTab, setActiveTab] = useState<'BUKU_TELUR' | 'BUKU_TRANSAKSI' | 'ASET' | 'AKUNTANSI' | 'PENGELUARAN' | 'BUKU_BESAR' | 'NERACA_SALDO'>('BUKU_TELUR');
+    const [isOpexModalOpen, setIsOpexModalOpen] = useState(false);
+    const [isApArModalOpen, setIsApArModalOpen] = useState(false);
+    const [isSinkingModalOpen, setIsSinkingModalOpen] = useState(false);
+    const [glAccountFilter, setGlAccountFilter] = useState('');
     const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
     const [editingAsset, setEditingAsset] = useState<any | null>(null);
     const [assetOwnershipType, setAssetOwnershipType] = useState<'BELI' | 'MILIK_PRIBADI'>('BELI');
@@ -54,26 +80,31 @@ export default function Finance() {
     const [txPage, setTxPage] = useState(1);
     const ITEMS_PER_PAGE = 10;
 
-    // --- Filtering Data for Active House ---
-    const filteredProdLogs = productionLogs.filter(p => p.houseId === activeHouse?.id);
-    const filteredSalesLogs = salesLogs.filter(s => s.houseId === activeHouse?.id);
+    // HPP Calculator State
+    const [hppMarginPct, setHppMarginPct] = useState(25); // margin keuntungan default 25%
+    const [hppCadangan, setHppCadangan] = useState(0);    // cadangan risiko (manual input)
 
-    // Transaksi dipisah per kandang
-    const houseTransactions = transactions.filter(t => t.houseId === activeHouse?.id);
+    // --- Filtering Data based on Scope ---
+    const isKonsolidasi = !activeHouse;
+    const filteredProdLogs = isKonsolidasi ? productionLogs : productionLogs.filter(p => p.houseId === activeHouse?.id);
+    const filteredSalesLogs = isKonsolidasi ? salesLogs : salesLogs.filter(s => s.houseId === activeHouse?.id);
+
+    // Transaksi dipisah per kandang atau semua
+    const houseTransactions = isKonsolidasi ? transactions : transactions.filter(t => t.houseId === activeHouse?.id);
     const expenseTransactions = houseTransactions.filter(t => t.type === 'EXPENSE');
     const incomeTransactions = houseTransactions.filter(t => t.type === 'INCOME');
     const modalTransactions = houseTransactions.filter(t => t.type === 'MODAL');
 
-    const houseAssets = assets.filter(a => a.houseId === activeHouse?.id);
+    const houseAssets = isKonsolidasi ? assets : assets.filter(a => a.houseId === activeHouse?.id);
 
     // For BUKU_TRANSAKSI - separate into 3 ledgers
     const salesTransactions = houseTransactions.filter(t => t.type === 'INCOME' && (t.category === 'Penjualan' || t.category === 'Free Goods' || t.category === 'Penjualan Afkir'));
     const bahanTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && (
         t.category === 'Pembelian DOC' ||
-        t.description.toLowerCase().includes('stok') || 
-        t.description.toLowerCase().includes('pakan') || 
-        t.description.toLowerCase().includes('bahan') || 
-        t.description.toLowerCase().includes('beli stok') || 
+        t.description.toLowerCase().includes('stok') ||
+        t.description.toLowerCase().includes('pakan') ||
+        t.description.toLowerCase().includes('bahan') ||
+        t.description.toLowerCase().includes('beli stok') ||
         t.description.toLowerCase().includes('pembelian stok')
     ));
     const operasionalTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && !bahanTransactions.find(b => b.id === t.id));
@@ -94,7 +125,10 @@ export default function Finance() {
     const activeFlock = getActiveFlockByHouse(activeHouse?.id || '');
     const currentPopulation = activeFlock?.currentCount || 0;
 
-    // ─── Egg Categorization Helpers ───────────────────────────────────────────
+    const sinkingFundAmount = netProfit > 0 ? netProfit * ((farmSettings.sinkingFundPct || 10) / 100) : 0;
+    const netProfitAfterFund = netProfit > 0 ? netProfit - sinkingFundAmount : netProfit;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Egg Categorization Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     const getNormalButir = (log: typeof filteredProdLogs[0]) =>
         (log.breakdown[EggCategory.BM] || 0) +
         (log.breakdown[EggCategory.KRC] || 0) +
@@ -110,8 +144,8 @@ export default function Finance() {
         (log.breakdown[EggCategory.PECAH] || 0) + (log.discardedEggs || 0);
 
     const getSoldByDate = (date: string, category: 'NORMAL' | 'RETAK', isFree = false) => {
-        const normalCats = ['BM', 'KRC', 'KS', 'PELOR', EggCategory.BM, EggCategory.KRC, EggCategory.KS, EggCategory.PELOR];
-        const retakCats = ['KRC_RETAK', 'KS_RETAK', 'RETAK', EggCategory.KRC_RETAK, EggCategory.KS_RETAK, EggCategory.RETAK, 'KRC_Retak', 'KS_Retak'];
+        const normalCats = ['BM', 'KRC', 'KS', 'PELOR', 'Remban', 'Bujang', EggCategory.BM, EggCategory.KRC, EggCategory.KS, EggCategory.PELOR];
+        const retakCats = ['KRC_RETAK', 'KS_RETAK', 'RETAK', 'Bujang Retak', 'KS Retak', 'Retak', EggCategory.KRC_RETAK, EggCategory.KS_RETAK, EggCategory.RETAK];
         const cats = category === 'NORMAL' ? normalCats : retakCats;
         return filteredSalesLogs
             .filter(s => s.date === date && cats.includes(s.category) && !!s.isFree === isFree)
@@ -154,10 +188,10 @@ export default function Finance() {
         const purchaseDate = new Date(asset.purchaseDate);
         const today = new Date();
         const diffMonths = (today.getFullYear() - purchaseDate.getFullYear()) * 12 + (today.getMonth() - purchaseDate.getMonth());
-        
+
         const salvageValue = asset.salvageValue || 0;
         const depreciableAmount = asset.purchasePrice - salvageValue;
-        
+
         // Garis Lurus: (Harga Beli - Nilai Sisa) / Umur Ekonomis
         const totalDepreciation = (depreciableAmount / (asset.expectedLifeYears * 12)) * Math.max(0, diffMonths);
         return Math.min(depreciableAmount, totalDepreciation);
@@ -179,7 +213,7 @@ export default function Finance() {
     const handleSaveAsset = (e: React.FormEvent) => {
         e.preventDefault();
         const formData = new FormData(e.target as HTMLFormElement);
-        
+
         const name = formData.get('name') as string;
         const category = formData.get('category') as string;
         const purchasePrice = Number(formData.get('purchasePrice'));
@@ -211,6 +245,9 @@ export default function Finance() {
 
             // Hanya catat ke buku kas jika jenis perolehan adalah BELI (bukan Milik Pribadi)
             if (assetOwnershipType === 'BELI') {
+                const accountId = formData.get('accountId') as string;
+                const selectedAcc = accounts.find(a => a.id === accountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
+
                 addTransaction({
                     houseId: activeHouse?.id,
                     date: purchaseDate,
@@ -218,7 +255,7 @@ export default function Finance() {
                     qty: '1 Unit',
                     price: purchasePrice,
                     total: purchasePrice,
-                    account: 'Kas Tunai',
+                    account: selectedAcc.name,
                     type: 'EXPENSE',
                     category: 'Aset'
                 });
@@ -266,29 +303,29 @@ export default function Finance() {
         };
         const formatIDR = '#,##0';
 
-        // ── SHEET 1: BUKU TELUR ─────────────────────────────────────────
+        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET 1: BUKU TELUR Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         const s1 = wb.addWorksheet('BUKU TELUR');
-        s1.columns = [8,12,12,12,12,12,12,12,12,14,10,14].map(w => ({ width: w }));
-        addSheetTitle(s1, 'BUKU PRODUKSI TELUR', `Populasi: ${currentPopulation.toLocaleString()} ekor · Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 12);
-        const h1 = ['Tanggal','Normal','','','Retak','','','Pecah','','Total (butir)','HDP %','Keterangan'];
-        const sh1 = ['','Produksi','Jual','Free','Produksi','Jual','Free','Produksi','Buang','','',''];
+        s1.columns = [8, 12, 12, 12, 12, 12, 12, 12, 12, 14, 10, 14].map(w => ({ width: w }));
+        addSheetTitle(s1, 'BUKU PRODUKSI TELUR', `Populasi: ${currentPopulation.toLocaleString()} ekor Ã‚Â· Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 12);
+        const h1 = ['Tanggal', 'Normal', '', '', 'Retak', '', '', 'Pecah', '', 'Total (butir)', 'HDP %', 'Keterangan'];
+        const sh1 = ['', 'Produksi', 'Jual', 'Free', 'Produksi', 'Jual', 'Free', 'Produksi', 'Buang', '', '', ''];
         s1.getRow(4).values = h1; s1.getRow(5).values = sh1;
-        ['A4:A5','B4:D4','E4:G4','H4:I4','J4:J5','K4:K5','L4:L5'].forEach(m => s1.mergeCells(m));
-        ['A','B','C','D','E','F','G','H','I','J','K','L'].forEach(c => { styleHeader(s1.getCell(`${c}4`)); styleHeader(s1.getCell(`${c}5`)); });
+        ['A4:A5', 'B4:D4', 'E4:G4', 'H4:I4', 'J4:J5', 'K4:K5', 'L4:L5'].forEach(m => s1.mergeCells(m));
+        ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach(c => { styleHeader(s1.getCell(`${c}4`)); styleHeader(s1.getCell(`${c}5`)); });
         s1.getRow(4).height = 20; s1.getRow(5).height = 16;
         filteredProdLogs.forEach((row, i) => {
             const r = 6 + i; const even = i % 2 === 1;
             s1.getRow(r).values = [
-                new Date(row.date).toLocaleDateString('id-ID'), getNormalButir(row), getSoldByDate(row.date,'NORMAL', false), getSoldByDate(row.date,'NORMAL', true),
-                getRetakButir(row), getSoldByDate(row.date,'RETAK', false), getSoldByDate(row.date,'RETAK', true), row.breakdown[EggCategory.PECAH]||0,
-                row.discardedEggs||0, row.totalButir ?? (row as any).totalKg ?? 0, +((row.eggCount/(currentPopulation||1))*100).toFixed(2), ''
+                new Date(row.date).toLocaleDateString('id-ID'), getNormalButir(row), getSoldByDate(row.date, 'NORMAL', false), getSoldByDate(row.date, 'NORMAL', true),
+                getRetakButir(row), getSoldByDate(row.date, 'RETAK', false), getSoldByDate(row.date, 'RETAK', true), row.breakdown[EggCategory.PECAH] || 0,
+                row.discardedEggs || 0, row.totalButir ?? (row as any).totalKg ?? 0, +((row.eggCount / (currentPopulation || 1)) * 100).toFixed(2), ''
             ];
-            ['A','B','C','D','E','F','G','H','I','J','K','L'].forEach(c => styleData(s1.getCell(`${c}${r}`), even));
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach(c => styleData(s1.getCell(`${c}${r}`), even));
             s1.getRow(r).height = 16;
         });
         const tr1 = 6 + filteredProdLogs.length;
-        s1.getRow(tr1).values = ['TOTAL',...['B','C','D','E','F','G','H','I','J'].map(c => ({formula:`SUM(${c}6:${c}${tr1-1})`})),'',''];
-        ['A','B','C','D','E','F','G','H','I','J'].forEach(c => {
+        s1.getRow(tr1).values = ['TOTAL', ...['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].map(c => ({ formula: `SUM(${c}6:${c}${tr1 - 1})` })), '', ''];
+        ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'].forEach(c => {
             const cell = s1.getCell(`${c}${tr1}`);
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
             cell.font = { bold: true };
@@ -297,9 +334,9 @@ export default function Finance() {
         // Helper: build a transaction sheet
         const buildTxSheet = (name: string, title: string, subtitle: string, txList: typeof houseTransactions, headerBg: string) => {
             const ws = wb.addWorksheet(name);
-            ws.columns = [6,14,32,14,18,18,14,20].map(w => ({ width: w }));
+            ws.columns = [6, 14, 32, 14, 18, 18, 14, 20].map(w => ({ width: w }));
             addSheetTitle(ws, title, subtitle, 8);
-            const headers = ['No','Tanggal Transaksi','Barang / Jasa','Qty','Harga Satuan (Rp)','Total Harga (Rp)','Tgl Bayar','Nama Request'];
+            const headers = ['No', 'Tanggal Transaksi', 'Barang / Jasa', 'Qty', 'Harga Satuan (Rp)', 'Total Harga (Rp)', 'Tgl Bayar', 'Nama Request'];
             ws.getRow(4).values = headers;
             headers.forEach((_, ci) => styleHeader(ws.getCell(4, ci + 1), headerBg));
             ws.getRow(4).height = 20;
@@ -307,8 +344,8 @@ export default function Finance() {
             txList.forEach((t, i) => {
                 const r = 5 + i; const even = i % 2 === 1;
                 runTotal += t.total;
-                ws.getRow(r).values = [i+1, new Date(t.date).toLocaleDateString('id-ID'), t.description, t.qty, t.price||0, t.total, new Date(t.date).toLocaleDateString('id-ID'), t.account||'-'];
-                [1,2,3,4,5,6,7,8].forEach(ci => styleData(ws.getCell(r, ci), even));
+                ws.getRow(r).values = [i + 1, new Date(t.date).toLocaleDateString('id-ID'), t.description, t.qty, t.price || 0, t.total, new Date(t.date).toLocaleDateString('id-ID'), t.account || '-'];
+                [1, 2, 3, 4, 5, 6, 7, 8].forEach(ci => styleData(ws.getCell(r, ci), even));
                 ws.getCell(r, 5).numFmt = formatIDR; ws.getCell(r, 6).numFmt = formatIDR;
                 ws.getCell(r, 1).alignment = { horizontal: 'center' };
                 ws.getRow(r).height = 16;
@@ -327,39 +364,39 @@ export default function Finance() {
             return runTotal;
         };
 
-        const totalPenjualan = buildTxSheet('PENJUALAN TELUR','BUKU PENJUALAN TELUR',`Jurnal Pendapatan · ${new Date().toLocaleDateString('id-ID')}`, salesTransactions, GREEN_BG);
-        const totalBahan = buildTxSheet('PENGELUARAN BAHAN','BUKU PENGELUARAN BAHAN',`Pembelian Pakan, Obat & Bahan Baku · ${new Date().toLocaleDateString('id-ID')}`, bahanTransactions, AMBER_BG);
-        const totalOperasional = buildTxSheet('PENGELUARAN OPERASIONAL','BUKU PENGELUARAN OPERASIONAL',`Gaji, Aset & Biaya Tetap · ${new Date().toLocaleDateString('id-ID')}`, operasionalTransactions, ROSE_BG);
+        const totalPenjualan = buildTxSheet('PENJUALAN TELUR', 'BUKU PENJUALAN TELUR', `Jurnal Pendapatan Ã‚Â· ${new Date().toLocaleDateString('id-ID')}`, salesTransactions, GREEN_BG);
+        const totalBahan = buildTxSheet('PENGELUARAN BAHAN', 'BUKU PENGELUARAN BAHAN', `Pembelian Pakan, Obat & Bahan Baku Ã‚Â· ${new Date().toLocaleDateString('id-ID')}`, bahanTransactions, AMBER_BG);
+        const totalOperasional = buildTxSheet('PENGELUARAN OPERASIONAL', 'BUKU PENGELUARAN OPERASIONAL', `Gaji, Aset & Biaya Tetap Ã‚Â· ${new Date().toLocaleDateString('id-ID')}`, operasionalTransactions, ROSE_BG);
 
-        // ── SHEET: MODAL MASUK ──────────────────────────────────────────
+        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET: MODAL MASUK Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         const sm = wb.addWorksheet('MODAL MASUK');
-        sm.columns = [6,30,20,14].map(w => ({ width: w }));
+        sm.columns = [6, 30, 20, 14].map(w => ({ width: w }));
         addSheetTitle(sm, 'RINCIAN MODAL MASUK', `Total Modal: Rp ${totalModalAwal.toLocaleString('id-ID')}`, 4);
-        sm.getRow(4).values = ['No','Keterangan','Nominal (Rp)','Tanggal'];
-        [1,2,3,4].forEach(ci => styleHeader(sm.getCell(4, ci), DARK));
+        sm.getRow(4).values = ['No', 'Keterangan', 'Nominal (Rp)', 'Tanggal'];
+        [1, 2, 3, 4].forEach(ci => styleHeader(sm.getCell(4, ci), DARK));
         sm.getRow(4).height = 20;
         modalTransactions.forEach((m, i) => {
             const r = 5 + i;
-            sm.getRow(r).values = [i+1, m.description, m.total, new Date(m.date).toLocaleDateString('id-ID')];
-            [1,2,3,4].forEach(ci => styleData(sm.getCell(r, ci), i % 2 === 1));
+            sm.getRow(r).values = [i + 1, m.description, m.total, new Date(m.date).toLocaleDateString('id-ID')];
+            [1, 2, 3, 4].forEach(ci => styleData(sm.getCell(r, ci), i % 2 === 1));
             sm.getCell(r, 3).numFmt = formatIDR;
         });
 
-        // ── SHEET: LAPORAN LABA RUGI ────────────────────────────────────
+        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET: LAPORAN LABA RUGI Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         const sl = wb.addWorksheet('LABA RUGI');
-        sl.columns = [35,22].map(w => ({ width: w }));
-        addSheetTitle(sl, 'LAPORAN LABA RUGI', `Periode s/d ${new Date().toLocaleDateString('id-ID')} · ${activeHouse?.name || 'Semua Kandang'}`, 2);
+        sl.columns = [35, 22].map(w => ({ width: w }));
+        addSheetTitle(sl, 'LAPORAN LABA RUGI', `Periode s/d ${new Date().toLocaleDateString('id-ID')} Ã‚Â· ${activeHouse?.name || 'Semua Kandang'}`, 2);
         const labaData: [string, number, boolean][] = [
-            ['PENDAPATAN','',false] as any,
+            ['PENDAPATAN', '', false] as any,
             ['  Penjualan Telur', totalPenjualan, false],
             ['  Lain-lain (Pendapatan Lainnya)', totalIncome - totalPenjualan > 0 ? totalIncome - totalPenjualan : 0, false],
             ['TOTAL PENDAPATAN', totalIncome, true],
-            ['','',false] as any,
-            ['BEBAN & PENGELUARAN','',false] as any,
+            ['', '', false] as any,
+            ['BEBAN & PENGELUARAN', '', false] as any,
             ['  Beban Bahan & Stok', totalBahan, false],
             ['  Beban Operasional & Gaji', totalOperasional, false],
             ['TOTAL BEBAN', totalBahan + totalOperasional, true],
-            ['','',false] as any,
+            ['', '', false] as any,
             ['LABA / (RUGI) BERSIH', netProfit, true],
             ['Modal Awal (Ekuitas)', totalModalAwal, false],
             ['MODAL AKHIR (EKUITAS)', currentCapital, true],
@@ -376,22 +413,22 @@ export default function Finance() {
             sl.getRow(r).height = 18;
         });
 
-        // ── SHEET 5: ASET & PENYUSUTAN ─────────────────────────────────
+        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET 5: ASET & PENYUSUTAN Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
         const s4 = wb.addWorksheet('ASET');
-        s4.columns = [6,28,20,14,18,12,18,18].map(w => ({ width: w }));
-        addSheetTitle(s4, 'DAFTAR ASET & PENYUSUTAN', `Metode: Garis Lurus · ${new Date().toLocaleDateString('id-ID')}`, 8);
-        s4.getRow(4).values = ['No','Nama Aset','Kategori','Tgl Perolehan','Nilai Beli (Rp)','Kondisi','Akum. Penyusutan (Rp)','Nilai Buku (Rp)'];
-        [1,2,3,4,5,6,7,8].forEach(ci => styleHeader(s4.getCell(4, ci), DARK));
+        s4.columns = [6, 28, 20, 14, 18, 12, 18, 18].map(w => ({ width: w }));
+        addSheetTitle(s4, 'DAFTAR ASET & PENYUSUTAN', `Metode: Garis Lurus Ã‚Â· ${new Date().toLocaleDateString('id-ID')}`, 8);
+        s4.getRow(4).values = ['No', 'Nama Aset', 'Kategori', 'Tgl Perolehan', 'Nilai Beli (Rp)', 'Kondisi', 'Akum. Penyusutan (Rp)', 'Nilai Buku (Rp)'];
+        [1, 2, 3, 4, 5, 6, 7, 8].forEach(ci => styleHeader(s4.getCell(4, ci), DARK));
         s4.getRow(4).height = 22;
         houseAssets.forEach((asset, i) => {
             const dep = calculateDepreciation(asset); const r = 5 + i;
-            s4.getRow(r).values = [i+1, asset.name, asset.category, new Date(asset.purchaseDate).toLocaleDateString('id-ID'), asset.purchasePrice, asset.condition, dep, asset.purchasePrice - dep];
-            [1,2,3,4,5,6,7,8].forEach(ci => styleData(s4.getCell(r, ci), i%2===1));
-            [5,7,8].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
+            s4.getRow(r).values = [i + 1, asset.name, asset.category, new Date(asset.purchaseDate).toLocaleDateString('id-ID'), asset.purchasePrice, asset.condition, dep, asset.purchasePrice - dep];
+            [1, 2, 3, 4, 5, 6, 7, 8].forEach(ci => styleData(s4.getCell(r, ci), i % 2 === 1));
+            [5, 7, 8].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
         });
 
         const buffer = await wb.xlsx.writeBuffer();
-        saveAs(new Blob([buffer]), `Laporan_Keuangan_${activeHouse?.name || 'Farm'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+        saveAs(new Blob([buffer]), `Laporan_Keuangan_${activeHouse?.name || 'Farm'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
 
@@ -402,423 +439,1046 @@ export default function Finance() {
         const desc = formData.get('description') as string;
 
         if (amount > 0) {
+            const accountId = formData.get('accountId') as string;
             if (editingModal) {
                 updateTransaction(editingModal.id, { total: amount, price: amount, description: desc });
                 Swal.fire({ title: 'Berhasil!', text: 'Modal telah diubah.', icon: 'success', confirmButtonColor: '#0f172a' });
             } else {
-                addModalAwal(amount, desc, activeHouse?.id);
+                addModalAwal(amount, desc, activeHouse?.id, accountId);
                 Swal.fire({ title: 'Berhasil!', text: 'Modal telah ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a' });
             }
             setIsModalAwalOpen(false);
         }
     };
 
-    return (
-        <div className="space-y-8 pb-20">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-xl lg:text-2xl font-black text-slate-900 tracking-tight italic uppercase">Finance & Accounting</h1>
-                    <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Manajemen keuangan sesuai standar akuntansi peternakan.</p>
+    const NeracaSaldo = () => {
+        const tb = getTrialBalance();
+        const totalDebit = tb.reduce((s, r) => s + r.debit, 0);
+        const totalCredit = tb.reduce((s, r) => s + r.credit, 0);
+        const isBalanced = Math.abs(totalDebit - totalCredit) < 1;
+        return (
+            <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">Neraca Saldo (Trial Balance)</h3>
+                    <span className={cn("px-3 py-1.5 text-[10px] font-black uppercase tracking-widest border rounded-lg", isBalanced ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200')}>
+                        {isBalanced ? 'Ã¢Å“â€œ BALANCE' : 'Ã¢Å¡Â  TIDAK BALANCE'}
+                    </span>
                 </div>
-                <div className="flex items-center space-x-3 overflow-x-auto">
-                    <div className="flex bg-white p-1 border border-slate-200 shadow-sm min-w-max">
-                        {['BUKU_TELUR', 'BUKU_TRANSAKSI', 'ASET'].map((tab) => (
-                            <button
-                                key={tab}
-                                onClick={() => setActiveTab(tab as any)}
-                                className={cn(
-                                    "px-4 py-2 text-[10px] font-bold uppercase tracking-widest transition-all",
-                                    activeTab === tab ? "bg-slate-900 text-white shadow-md" : "text-slate-400 hover:text-slate-900"
-                                )}
-                            >
-                                {tab.replace('_', ' ')}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-white p-6 border border-slate-200 shadow-sm space-y-8 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-1 h-full bg-amber-500 opacity-50"></div>
-                        <div>
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-6 italic">Ringkasan Ekuitas</h3>
-                            <div className="space-y-4">
-                                <div className="p-4 bg-slate-50 border border-slate-100 relative">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Laba/Rugi Bersih</p>
-                                    <p className={cn(
-                                        "text-xl font-black italic tracking-tighter",
-                                        netProfit >= 0 ? "text-emerald-600" : "text-rose-600"
-                                    )}>
-                                        {netProfit < 0 ? '-' : '+'} {formatCurrency(Math.abs(netProfit))}
-                                    </p>
-                                </div>
-                                <div className="p-4 bg-slate-900 border border-slate-800 relative">
-                                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-1">Modal Akhir (Equity)</p>
-                                    <p className="text-xl font-black italic tracking-tighter text-amber-500">{formatCurrency(currentCapital)}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => { setEditingModal(null); setIsModalAwalOpen(true); }}
-                            className="w-full bg-slate-100 text-slate-900 py-3 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-slate-200 transition-all border border-slate-200"
-                        >
-                            Suntik Modal
-                        </button>
-                    </div>
-
-                    <div className="bg-slate-900 p-6 text-white space-y-6 border border-slate-800 shadow-xl">
-                        <button
-                            onClick={handleExportExcel}
-                            className="w-full bg-slate-800 hover:bg-slate-700 py-4 rounded-sm border border-slate-700 flex items-center justify-center space-x-3 transition-all group"
-                        >
-                            <Download size={18} className="group-hover:text-amber-500 transition-colors" />
-                            <span className="font-bold text-[10px] uppercase tracking-widest">Download Laporan Excel</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div className="lg:col-span-3 space-y-6">
-                    {activeTab === 'BUKU_TELUR' && (
-                        <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
-                            <div className="p-8 border-b border-slate-100 bg-slate-50/30">
-                                <h3 className="font-bold text-lg text-slate-900 uppercase tracking-tight italic">Buku Telur Produksi</h3>
-                            </div>
-
-                            <div className="overflow-x-auto p-4">
-                                <table className="w-full text-center border-collapse border border-slate-200 min-w-max">
-                                    <thead>
-                                        <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest border-b border-slate-700">
-                                            <th rowSpan={2} className="px-3 py-3 border border-slate-700">Tgl</th>
-                                            <th rowSpan={2} className="px-3 py-3 border border-slate-700 bg-slate-800">Stok Awal</th>
-                                            <th colSpan={3} className="px-2 py-3 border border-slate-700 bg-emerald-900/50">Masuk (Produksi)</th>
-                                            <th colSpan={2} className="px-2 py-3 border border-slate-700 bg-amber-900/50">Keluar</th>
-                                            <th rowSpan={2} className="px-3 py-3 border border-slate-700 bg-slate-800 text-emerald-400">Stok Akhir</th>
-                                            <th rowSpan={2} className="px-3 py-3 border border-slate-700 italic">HDP</th>
-                                        </tr>
-                                        <tr className="bg-slate-800 text-slate-300 text-[8px] font-bold uppercase tracking-wider">
-                                            <th className="px-2 py-2 border border-slate-700">Normal</th>
-                                            <th className="px-2 py-2 border border-slate-700">Retak</th>
-                                            <th className="px-2 py-2 border border-slate-700">Pecah</th>
-                                            <th className="px-2 py-2 border border-slate-700">Jual/Free</th>
-                                            <th className="px-2 py-2 border border-slate-700">Buang</th>
-                                        </tr>
-                                    </thead>
-                                     <tbody className="text-[10px] text-slate-700 font-medium">
-                                        {paginatedBalanceLogs.map((row, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50 border-b border-slate-100 transition-colors">
-                                                <td className="px-3 py-3 font-bold bg-slate-50/50">{new Date(row.date).toLocaleDateString('id-ID')}</td>
-                                                <td className="px-3 py-3 font-mono text-slate-400">{row.opening.toLocaleString()}</td>
-                                                
-                                                {/* MASUK */}
-                                                <td className="px-2 py-3 font-bold text-emerald-600">{getNormalButir(row).toLocaleString()}</td>
-                                                <td className="px-2 py-3 text-emerald-500">{(row.breakdown[EggCategory.RETAK] || 0).toLocaleString()}</td>
-                                                <td className="px-2 py-3 text-emerald-400">{(row.breakdown[EggCategory.PECAH] || 0).toLocaleString()}</td>
-                                                
-                                                {/* KELUAR */}
-                                                <td className="px-2 py-3 text-amber-600 font-bold">{(row.soldN + row.soldR + row.freeN + row.freeR).toLocaleString()}</td>
-                                                <td className="px-2 py-3 text-rose-400">{row.waste || '-'}</td>
-                                                
-                                                <td className="px-3 py-3 font-black text-slate-900 bg-emerald-50/30">{row.closing.toLocaleString()}</td>
-                                                <td className="px-3 py-3 font-bold text-slate-400 italic">{((row.eggCount / (currentPopulation || 1)) * 100).toFixed(1)}%</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot className="bg-slate-50 font-black text-[10px] uppercase">
-                                        <tr>
-                                            <td className="px-3 py-4">TOTAL</td>
-                                            <td></td>
-                                            <td className="px-2 py-4 text-emerald-600 font-bold">{totalNormal.toLocaleString()}</td>
-                                            <td className="px-2 py-4">{totalRetak.toLocaleString()}</td>
-                                            <td className="px-2 py-4">{totalPecah.toLocaleString()}</td>
-                                            <td className="px-2 py-4 text-amber-600">{(totalNormalSold + totalRetakSold + totalNormalFree + totalRetakFree).toLocaleString()}</td>
-                                            <td className="px-2 py-4 text-rose-400">{filteredProdLogs.reduce((a,b)=>a+(b.discardedEggs||0),0).toLocaleString()}</td>
-                                            <td className="px-3 py-4 text-slate-900 bg-emerald-50/50 italic">
-                                                {productionWithBalance.length > 0 ? productionWithBalance[0].closing.toLocaleString() : 0}
-                                            </td>
-                                            <td></td>
-                                        </tr>
-                                    </tfoot>
-                                 </table>
-                            </div>
-                            <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase">Page {prodPage} of {Math.ceil(productionWithBalance.length / ITEMS_PER_PAGE) || 1}</span>
-                                <div className="flex space-x-2">
-                                    <button onClick={() => setProdPage(Math.max(1, prodPage - 1))} disabled={prodPage === 1} className="p-1 bg-white border border-slate-200 rounded-sm disabled:opacity-50"><ChevronLeft size={16} /></button>
-                                    <button onClick={() => setProdPage(Math.min(Math.ceil(productionWithBalance.length / ITEMS_PER_PAGE), prodPage + 1))} disabled={prodPage >= Math.ceil(productionWithBalance.length / ITEMS_PER_PAGE)} className="p-1 bg-white border border-slate-200 rounded-sm disabled:opacity-50"><ChevronRight size={16} /></button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'BUKU_TRANSAKSI' && (
-                        <div className="space-y-8">
-
-                            {/* SECTION 1: PENJUALAN TELUR */}
-                            <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
-                                <div className="px-8 py-5 border-b border-slate-100 bg-emerald-50 flex items-center justify-between">
-                                    <div>
-                                        <h3 className="font-bold text-base text-emerald-800 uppercase tracking-tight italic">Buku Penjualan Telur</h3>
-                                        <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest mt-0.5">Jurnal Pendapatan · {salesTransactions.length} transaksi</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest">Total Pendapatan</p>
-                                        <p className="text-lg font-black text-emerald-700">{formatCurrency(salesTransactions.reduce((a,t) => a+t.total, 0))}</p>
-                                    </div>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
-                                                <th className="px-3 py-3 w-8">No</th>
-                                                <th className="px-3 py-3">Tanggal Transaksi</th>
-                                                <th className="px-3 py-3">Barang / Jasa</th>
-                                                <th className="px-3 py-3 text-center">Qty</th>
-                                                <th className="px-3 py-3 text-right">Harga Satuan</th>
-                                                <th className="px-3 py-3 text-right">Total Harga</th>
-                                                <th className="px-3 py-3">Tgl Bayar</th>
-                                                <th className="px-3 py-3">Nama Pembeli</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-[10px] divide-y divide-slate-50">
-                                            {salesTransactions.length === 0 ? (
-                                                <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada data penjualan telur</td></tr>
-                                            ) : salesTransactions.map((t, idx) => (
-                                                <tr key={t.id} className="hover:bg-emerald-50/30 transition-colors">
-                                                    <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
-                                                    <td className="px-3 py-3 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                                                    <td className="px-3 py-3 font-bold text-slate-800">{t.description}</td>
-                                                    <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{t.qty}</td>
-                                                    <td className="px-3 py-3 text-right font-mono text-slate-600">{t.price > 0 ? formatCurrency(t.price) : '-'}</td>
-                                                    <td className="px-3 py-3 text-right font-mono font-black text-emerald-700">{formatCurrency(t.total)}</td>
-                                                    <td className="px-3 py-3 text-slate-500">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                                                    <td className="px-3 py-3 text-slate-500">{t.account}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                        {salesTransactions.length > 0 && (
-                                            <tfoot className="bg-emerald-50 border-t-2 border-emerald-200">
-                                                <tr>
-                                                    <td colSpan={5} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-emerald-700">Total Penjualan Telur</td>
-                                                    <td className="px-3 py-3 text-right font-black text-emerald-700 font-mono">{formatCurrency(salesTransactions.reduce((a,t) => a+t.total, 0))}</td>
-                                                    <td colSpan={2}></td>
-                                                </tr>
-                                            </tfoot>
-                                        )}
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* SECTION 2: PENGELUARAN BAHAN */}
-                            <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
-                                <div className="px-8 py-5 border-b border-slate-100 bg-amber-50 flex items-center justify-between">
-                                    <div>
-                                        <h3 className="font-bold text-base text-amber-800 uppercase tracking-tight italic">Pengeluaran Bahan & Stok</h3>
-                                        <p className="text-[9px] text-amber-600 font-bold uppercase tracking-widest mt-0.5">Pembelian Pakan, Obat, Bahan Baku · {bahanTransactions.length} transaksi</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[9px] text-amber-600 font-bold uppercase tracking-widest">Total Pengeluaran</p>
-                                        <p className="text-lg font-black text-amber-700">{formatCurrency(bahanTransactions.reduce((a,t) => a+t.total, 0))}</p>
-                                    </div>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
-                                                <th className="px-3 py-3 w-8">No</th>
-                                                <th className="px-3 py-3">Tanggal Transaksi</th>
-                                                <th className="px-3 py-3">Barang / Jasa</th>
-                                                <th className="px-3 py-3 text-center">Qty</th>
-                                                <th className="px-3 py-3 text-right">Harga Satuan</th>
-                                                <th className="px-3 py-3 text-right">Total Harga</th>
-                                                <th className="px-3 py-3">Tgl Bayar</th>
-                                                <th className="px-3 py-3">Nama Request</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-[10px] divide-y divide-slate-50">
-                                            {bahanTransactions.length === 0 ? (
-                                                <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada pengeluaran bahan</td></tr>
-                                            ) : bahanTransactions.map((t, idx) => (
-                                                <tr key={t.id} className="hover:bg-amber-50/30 transition-colors">
-                                                    <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
-                                                    <td className="px-3 py-3 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                                                    <td className="px-3 py-3 font-bold text-slate-800">{t.description}</td>
-                                                    <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{t.qty}</td>
-                                                    <td className="px-3 py-3 text-right font-mono text-slate-600">{t.price > 0 ? formatCurrency(t.price) : '-'}</td>
-                                                    <td className="px-3 py-3 text-right font-mono font-black text-rose-700">{formatCurrency(t.total)}</td>
-                                                    <td className="px-3 py-3 text-slate-500">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                                                    <td className="px-3 py-3 text-slate-500">{t.account}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                        {bahanTransactions.length > 0 && (
-                                            <tfoot className="bg-amber-50 border-t-2 border-amber-200">
-                                                <tr>
-                                                    <td colSpan={5} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-amber-700">Total Pengeluaran Bahan</td>
-                                                    <td className="px-3 py-3 text-right font-black text-rose-700 font-mono">{formatCurrency(bahanTransactions.reduce((a,t) => a+t.total, 0))}</td>
-                                                    <td colSpan={2}></td>
-                                                </tr>
-                                            </tfoot>
-                                        )}
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* SECTION 3: PENGELUARAN OPERASIONAL */}
-                            <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
-                                <div className="px-8 py-5 border-b border-slate-100 bg-rose-50 flex items-center justify-between">
-                                    <div>
-                                        <h3 className="font-bold text-base text-rose-800 uppercase tracking-tight italic">Pengeluaran Operasional</h3>
-                                        <p className="text-[9px] text-rose-600 font-bold uppercase tracking-widest mt-0.5">Gaji, Aset, Biaya Operasional · {operasionalTransactions.length} transaksi</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-[9px] text-rose-600 font-bold uppercase tracking-widest">Total Pengeluaran</p>
-                                        <p className="text-lg font-black text-rose-700">{formatCurrency(operasionalTransactions.reduce((a,t) => a+t.total, 0))}</p>
-                                    </div>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
-                                                <th className="px-3 py-3 w-8">No</th>
-                                                <th className="px-3 py-3">Tanggal Transaksi</th>
-                                                <th className="px-3 py-3">Barang / Jasa</th>
-                                                <th className="px-3 py-3 text-center">Qty</th>
-                                                <th className="px-3 py-3 text-right">Harga Satuan</th>
-                                                <th className="px-3 py-3 text-right">Total Harga</th>
-                                                <th className="px-3 py-3">Tgl Bayar</th>
-                                                <th className="px-3 py-3">Nama Request</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-[10px] divide-y divide-slate-50">
-                                            {operasionalTransactions.length === 0 ? (
-                                                <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada pengeluaran operasional</td></tr>
-                                            ) : operasionalTransactions.map((t, idx) => (
-                                                <tr key={t.id} className="hover:bg-rose-50/30 transition-colors">
-                                                    <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
-                                                    <td className="px-3 py-3 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                                                    <td className="px-3 py-3 font-bold text-slate-800">{t.description}</td>
-                                                    <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{t.qty}</td>
-                                                    <td className="px-3 py-3 text-right font-mono text-slate-600">{t.price > 0 ? formatCurrency(t.price) : '-'}</td>
-                                                    <td className="px-3 py-3 text-right font-mono font-black text-rose-700">{formatCurrency(t.total)}</td>
-                                                    <td className="px-3 py-3 text-slate-500">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                                                    <td className="px-3 py-3 text-slate-500">{t.account}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                        {operasionalTransactions.length > 0 && (
-                                            <tfoot className="bg-rose-50 border-t-2 border-rose-200">
-                                                <tr>
-                                                    <td colSpan={5} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-rose-700">Total Operasional</td>
-                                                    <td className="px-3 py-3 text-right font-black text-rose-700 font-mono">{formatCurrency(operasionalTransactions.reduce((a,t) => a+t.total, 0))}</td>
-                                                    <td colSpan={2}></td>
-                                                </tr>
-                                            </tfoot>
-                                        )}
-                                    </table>
-                                </div>
-                            </div>
-
-                            {/* SUMMARY ROW */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div className="bg-emerald-900 text-white p-4 lg:p-5">
-                                    <p className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 mb-1">Total Pendapatan</p>
-                                    <p className="text-lg lg:text-xl font-black text-emerald-300">{formatCurrency(salesTransactions.reduce((a,t) => a+t.total, 0))}</p>
-                                </div>
-                                <div className="bg-rose-900 text-white p-4 lg:p-5">
-                                    <p className="text-[9px] font-bold uppercase tracking-widest text-rose-400 mb-1">Total Pengeluaran</p>
-                                    <p className="text-lg lg:text-xl font-black text-rose-300">{formatCurrency([...bahanTransactions, ...operasionalTransactions].reduce((a,t) => a+t.total, 0))}</p>
-                                </div>
-                                <div className={cn("p-4 lg:p-5 text-white", netProfit >= 0 ? 'bg-slate-900' : 'bg-rose-950')}>
-                                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Laba / Rugi Bersih</p>
-                                    <p className={cn("text-lg lg:text-xl font-black", netProfit >= 0 ? 'text-amber-400' : 'text-rose-400')}>{netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit)}</p>
-                                </div>
-                            </div>
-
-                            {/* MODAL MASUK */}
-                            {modalTransactions.length > 0 && (
-                                <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
-                                    <div className="px-8 py-4 border-b border-slate-100 bg-slate-50">
-                                        <h3 className="font-bold text-sm text-slate-700 uppercase tracking-tight italic">Modal Masuk</h3>
-                                    </div>
-                                    <div className="p-4 space-y-2">
-                                        {modalTransactions.map((m, i) => (
-                                            <div key={i} className="flex justify-between items-center p-3 bg-slate-50 border border-slate-100 group">
-                                                <span className="text-[11px] font-bold text-slate-600">{m.description} · {new Date(m.date).toLocaleDateString('id-ID')}</span>
-                                                <div className="flex items-center space-x-2">
-                                                    <span className="text-emerald-600 font-black text-sm">{formatCurrency(m.total)}</span>
-                                                    <button onClick={() => { setEditingModal(m); setIsModalAwalOpen(true); }} className="text-slate-400 hover:text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 size={12} /></button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === 'ASET' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {houseAssets.map((asset) => {
-                                const depreciation = calculateDepreciation(asset);
-                                const currentValue = asset.purchasePrice - depreciation;
+                <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-x-auto">
+                    <table className="w-full text-left min-w-max">
+                        <thead><tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+                            <th className="px-4 py-3 rounded-tl-xl">Kode</th><th className="px-4 py-3">Nama Akun</th>
+                            <th className="px-4 py-3">Kategori</th>
+                            <th className="px-4 py-3 text-right">Debit</th><th className="px-4 py-3 text-right rounded-tr-xl">Kredit</th>
+                        </tr></thead>
+                        <tbody className="divide-y divide-slate-100 text-[11px] font-bold">
+                            {Object.values(AccountCategory).map(cat => {
+                                const rows = tb.filter(r => r.category === cat);
+                                if (rows.length === 0) return null;
                                 return (
-                                    <div 
-                                        key={asset.id} 
-                                        onClick={() => {
-                                            setSelectedAssetId(asset.id);
-                                            setIsMaintenanceModalOpen(true);
-                                        }}
-                                        className="bg-white p-6 border border-slate-200 shadow-sm space-y-4 group hover:border-amber-500 transition-all cursor-pointer relative overflow-hidden"
-                                    >
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{asset.category}</p>
-                                                    <button onClick={(e) => { e.stopPropagation(); setEditingAsset(asset); setIsAssetModalOpen(true); }} className="text-slate-400 hover:text-amber-500"><Edit2 size={12} /></button>
-                                                </div>
-                                                <h4 className="font-bold text-slate-800 mt-1 uppercase tracking-tight">{asset.name}</h4>
-                                            </div>
-                                            <span className={cn(
-                                                "text-[9px] font-black uppercase px-2 py-0.5 rounded-sm border",
-                                                asset.condition === 'BAIK' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : 
-                                                asset.condition === 'SERVIS' ? "bg-amber-50 text-amber-600 border-amber-100" : 
-                                                "bg-rose-50 text-rose-600 border-rose-100"
-                                            )}>
-                                                {asset.condition}
-                                            </span>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
-                                            <div>
-                                                <p className="text-[8px] font-bold text-slate-400 uppercase">Nilai Awal</p>
-                                                <p className="text-xs font-black text-slate-600">{formatCurrency(asset.purchasePrice)}</p>
-                                            </div>
-                                            <div>
-                                                <p className="text-[8px] font-bold text-slate-400 uppercase">Penyusutan</p>
-                                                <p className="text-xs font-black text-rose-500">-{formatCurrency(depreciation)}</p>
-                                            </div>
-                                        </div>
-                                        <div className="bg-slate-900 p-3 flex justify-between items-center">
-                                            <span className="text-[8px] font-bold text-slate-400 uppercase">Nilai Buku Saat Ini</span>
-                                            <span className="text-xs font-black text-amber-500">{formatCurrency(currentValue)}</span>
-                                        </div>
-                                    </div>
+                                    <React.Fragment key={cat}>
+                                        <tr className="bg-slate-100"><td colSpan={5} className="px-4 py-1.5 text-[9px] font-black uppercase text-slate-500 tracking-widest">{cat}</td></tr>
+                                        {rows.map(r => (
+                                            <tr key={r.accountId} className="hover:bg-slate-50">
+                                                <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
+                                                <td className="px-4 py-2 text-slate-800">{r.name}</td>
+                                                <td className="px-4 py-2 text-slate-400">{r.category}</td>
+                                                <td className="px-4 py-2 text-right text-emerald-600">{r.debit > 0 ? formatCurrency(r.debit) : '-'}</td>
+                                                <td className="px-4 py-2 text-right text-rose-500">{r.credit > 0 ? formatCurrency(r.credit) : '-'}</td>
+                                            </tr>
+                                        ))}
+                                    </React.Fragment>
                                 );
                             })}
-                            <button
-                                onClick={() => { setEditingAsset(null); setAssetOwnershipType('BELI'); setIsAssetModalOpen(true); }}
-                                className="bg-slate-50 border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center text-slate-400 hover:border-amber-500 hover:text-amber-500 transition-colors"
-                            >
-                                <Plus size={32} />
-                                <span className="text-[10px] font-bold uppercase mt-3">Tambah Aset Inventaris</span>
-                            </button>
+                        </tbody>
+                        <tfoot><tr className={cn("border-t-2 font-black text-[11px]", isBalanced ? 'border-emerald-300 bg-emerald-50' : 'border-rose-300 bg-rose-50')}>
+                            <td colSpan={3} className="px-4 py-3 uppercase">TOTAL</td>
+                            <td className="px-4 py-3 text-right text-emerald-700">{formatCurrency(totalDebit)}</td>
+                            <td className="px-4 py-3 text-right text-rose-700">{formatCurrency(totalCredit)}</td>
+                        </tr></tfoot>
+                    </table>
+                </div>
+            </div>
+        );
+    };
+
+    // Tab config with icons & labels
+    const TABS = [
+        { id: 'BUKU_TELUR', label: 'Buku Telur', Icon: Egg, short: 'Telur' },
+        { id: 'BUKU_TRANSAKSI', label: 'Buku Kas', Icon: Coins, short: 'Kas' },
+        { id: 'PENGELUARAN', label: 'Pengeluaran', Icon: ClipboardList, short: 'Biaya' },
+        { id: 'ASET', label: 'Aset', Icon: Building2, short: 'Aset' },
+        { id: 'AKUNTANSI', label: 'Akuntansi', Icon: BookCopy, short: 'Jurnal' },
+        { id: 'BUKU_BESAR', label: 'Buku Besar', Icon: BarChart3, short: 'Besar' },
+        { id: 'NERACA_SALDO', label: 'Neraca Saldo', Icon: Scale, short: 'Neraca' },
+    ] as const;
+
+    return (
+        <>
+        <div className="pb-24 md:pb-8 space-y-0">
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ HEADER Ã¢â€â‚¬Ã¢â€â‚¬ */}
+            <div className="bg-white border-b border-slate-200 px-4 md:px-6 py-4 sticky top-0 z-30 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <h1 className="text-base md:text-xl font-black text-slate-900 tracking-tight uppercase">Finance & Accounting</h1>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest hidden md:block">Manajemen keuangan sesuai standar akuntansi peternakan</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {/* Quick actions */}
+                        <button onClick={() => setIsOpexModalOpen(true)}
+                            className="hidden md:flex items-center gap-1.5 bg-amber-500 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-amber-600 transition-all shadow-sm">
+                            <span>+</span> Biaya Harian
+                        </button>
+                        <button onClick={handleExportExcel}
+                            className="hidden md:flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-slate-800 transition-all shadow-sm">
+                            <Download size={13} /> Export
+                        </button>
+                    </div>
+                </div>
+
+                {/* Ã¢â€â‚¬Ã¢â€â‚¬ KPI SUMMARY CARDS Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                    {[
+                        { label: 'Total Pemasukan', val: formatCurrency(totalIncome), color: 'text-emerald-600', bg: 'bg-emerald-50', Icon: TrendingUp },
+                        { label: 'Total Pengeluaran', val: formatCurrency(totalExpenses), color: 'text-rose-600', bg: 'bg-rose-50', Icon: TrendingDown },
+                        { label: 'Laba / Rugi Bersih', val: (netProfit >= 0 ? '+' : '') + formatCurrency(netProfit), color: netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700', bg: netProfit >= 0 ? 'bg-emerald-100' : 'bg-rose-100', Icon: netProfit >= 0 ? CheckCircle : XCircle },
+                        { label: 'Modal Akhir', val: formatCurrency(currentCapital), color: 'text-amber-700', bg: 'bg-amber-50', Icon: CircleDollarSign },
+                    ].map(kpi => (
+                        <div key={kpi.label} className={cn('p-3 rounded-lg border', kpi.bg, 'border-opacity-50')}>
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                                <kpi.Icon size={11} className={kpi.color} />
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{kpi.label}</p>
+                            </div>
+                            <p className={cn('text-sm md:text-base font-black', kpi.color)}>{kpi.val}</p>
                         </div>
-                    )}
+                    ))}
+                </div>
+
+                {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB NAVIGATION (Desktop: horizontal, under header) Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                <div className="hidden md:flex mt-4 gap-1 overflow-x-auto pb-0.5">
+                    {TABS.map(tab => (
+                        <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
+                            className={cn(
+                                "flex items-center gap-1.5 px-3 py-2 text-[10px] font-black uppercase tracking-wide rounded-lg whitespace-nowrap transition-all",
+                                activeTab === tab.id
+                                    ? "bg-slate-900 text-white shadow-md"
+                                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                            )}
+                        >
+                            <tab.Icon size={13} /> {tab.label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {/* MODALS */}
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ MOBILE BOTTOM TAB BAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
+            <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-2xl">
+                <div className="flex overflow-x-auto">
+                    {TABS.map(tab => (
+                        <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
+                            className={cn(
+                                "flex flex-col items-center justify-center flex-1 min-w-[56px] py-2 px-1 transition-all",
+                                activeTab === tab.id ? "text-amber-600 border-t-2 border-amber-500 bg-amber-50" : "text-slate-400"
+                            )}
+                        >
+                            <tab.Icon size={18} />
+                            <span className="text-[8px] font-black uppercase mt-0.5">{tab.short}</span>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ MAIN CONTENT AREA Ã¢â€â‚¬Ã¢â€â‚¬ */}
+            <div className="p-4 md:p-6">
+                <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+                    {/* Ã¢â€â‚¬Ã¢â€â‚¬ SIDEBAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                    <div className="xl:col-span-1">
+                        {/* Mobile: horizontal scroll card row */}
+                        <div className="flex xl:flex-col gap-3 overflow-x-auto pb-2 xl:pb-0">
+                            {/* Equity Card */}
+                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 min-w-[200px] xl:min-w-0 flex-shrink-0 xl:flex-shrink">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><Wallet size={11} /> Ringkasan Ekuitas</p>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] text-slate-500 font-bold">Modal Awal</span>
+                                        <span className="text-[11px] font-black text-slate-700">{formatCurrency(totalModalAwal)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-[10px] text-slate-500 font-bold">Laba/Rugi</span>
+                                        <span className={cn("text-[11px] font-black", netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600')}>{netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center border-t border-slate-100 pt-2">
+                                        <span className="text-[10px] text-slate-700 font-black uppercase">Ekuitas Akhir</span>
+                                        <span className="text-sm font-black text-amber-600">{formatCurrency(currentCapital)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            {/* Renovation Recommendation Card */}
+                            {(() => {
+                                // --- Kalkulasi Alokasi Peremajaan ---
+                                // Rumus: Alokasi Bulanan = (Nilai Aset - Nilai Sisa) / (Umur Ekonomis * 12)
+                                const cageMonthly = (farmSettings.cageValueTotal - farmSettings.cageSalvageValue) / (farmSettings.cageLifeYears * 12);
+                                const layerMonthly = (farmSettings.layerValueTotal - farmSettings.layerSalvageValue) / (farmSettings.layerLifeYears * 12);
+
+                                // Akumulasi penyusutan sejak pembelian (berdasarkan tanggal flock aktif)
+                                const activeFlock2 = getActiveFlockByHouse(activeHouse?.id || '');
+                                const flockAgeMonths = activeFlock2
+                                    ? Math.max(0, (new Date().getFullYear() - new Date(activeFlock2.arrivalDate).getFullYear()) * 12
+                                        + (new Date().getMonth() - new Date(activeFlock2.arrivalDate).getMonth()))
+                                    : 0;
+                                const layerEconomicMonths = farmSettings.layerLifeYears * 12;
+                                const layerRemainingMonths = Math.max(0, layerEconomicMonths - flockAgeMonths);
+                                const layerPctDepleted = Math.min(100, (flockAgeMonths / layerEconomicMonths) * 100);
+
+                                // Dana yang sudah terakumulasi (dari sinkingFundAllocations)
+                                const totalFundSaved = sinkingFundAllocations.reduce((s, a) => s + a.amount, 0);
+                                const targetLayerFund = farmSettings.layerValueTotal - farmSettings.layerSalvageValue;
+                                const targetCageFund = farmSettings.cageValueTotal - farmSettings.cageSalvageValue;
+                                const totalTarget = targetLayerFund + targetCageFund;
+
+                                return (
+                                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 min-w-[200px] xl:min-w-0 flex-shrink-0 xl:flex-shrink space-y-4">
+                                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><RefreshCw size={11} /> Rekomendasi Peremajaan</p>
+
+                                        {/* Peremajaan Ayam */}
+                                        <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <p className="text-[9px] font-black uppercase text-amber-700 flex items-center gap-1"><Bird size={11} /> Ayam Layer</p>
+                                                <span className="text-[8px] font-bold text-amber-600">{flockAgeMonths} / {layerEconomicMonths} bln</span>
+                                            </div>
+                                            <div className="w-full bg-amber-200 rounded-full h-1.5 mb-2">
+                                                <div className="bg-amber-500 h-1.5 rounded-full transition-all" style={{ width: `${layerPctDepleted}%` }} />
+                                            </div>
+                                            <div className="flex justify-between text-[9px]">
+                                                <span className="text-slate-500 font-bold">Dana/bln</span>
+                                                <span className="font-black text-amber-700">{formatCurrency(layerMonthly)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[9px] mt-0.5">
+                                                <span className="text-slate-500 font-bold">Sisa waktu</span>
+                                                <span className="font-black text-rose-600">{layerRemainingMonths} bln</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Peremajaan Kandang */}
+                                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                            <p className="text-[9px] font-black uppercase text-slate-600 mb-1 flex items-center gap-1"><Home size={11} /> Kandang &amp; Bangunan</p>
+                                            <div className="flex justify-between text-[9px]">
+                                                <span className="text-slate-500 font-bold">Cadangan/bln</span>
+                                                <span className="font-black text-slate-700">{formatCurrency(cageMonthly)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[9px] mt-0.5">
+                                                <span className="text-slate-500 font-bold">Target total</span>
+                                                <span className="font-black text-slate-500">{formatCurrency(targetCageFund)}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Progress Dana */}
+                                        <div className="pt-2 border-t border-slate-100">
+                                            <div className="flex justify-between text-[9px] mb-1">
+                                                <span className="text-slate-400 font-bold uppercase">Dana Terkumpul</span>
+                                                <span className="font-black text-emerald-600">{totalTarget > 0 ? Math.round(totalFundSaved / totalTarget * 100) : 0}%</span>
+                                            </div>
+                                            <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                                <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, totalTarget > 0 ? totalFundSaved / totalTarget * 100 : 0)}%` }} />
+                                            </div>
+                                            <p className="text-[8px] text-slate-400 mt-1">{formatCurrency(totalFundSaved)} dari {formatCurrency(totalTarget)}</p>
+                                        </div>
+                                        <button onClick={() => setIsSinkingModalOpen(true)} className="w-full text-[9px] font-black uppercase tracking-widest text-slate-600 border border-slate-200 rounded-lg py-1.5 hover:bg-slate-50 transition-all flex items-center justify-center gap-1">
+                                            <PiggyBank size={11} /> Catat Realisasi Dana
+                                        </button>
+                                    </div>
+                                );
+                            })()}
+                            {/* Quick Action Buttons */}
+                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 min-w-[180px] xl:min-w-0 flex-shrink-0 xl:flex-shrink space-y-2">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><Zap size={11} /> Aksi Cepat</p>
+                                <button onClick={() => { setEditingModal(null); setIsModalAwalOpen(true); }}
+                                    className="w-full flex items-center gap-2 bg-slate-100 text-slate-800 py-2.5 px-3 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-slate-200 transition-all">
+                                    <Banknote size={13} /> Suntik Modal
+                                </button>
+                                <button onClick={() => setIsOpexModalOpen(true)}
+                                    className="w-full flex items-center gap-2 bg-amber-50 text-amber-800 py-2.5 px-3 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-amber-100 transition-all border border-amber-100">
+                                    <ClipboardList size={13} /> Catat Pengeluaran
+                                </button>
+                                <button onClick={handleExportExcel}
+                                    className="w-full flex items-center gap-2 bg-slate-900 text-white py-2.5 px-3 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-slate-800 transition-all">
+                                    <Download size={12} /> Laporan Excel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB CONTENT AREA Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                    <div className="xl:col-span-3 space-y-4">
+                        {activeTab === 'BUKU_TELUR' && (
+                            <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
+                                <div className="p-8 border-b border-slate-100 bg-slate-50/30">
+                                    <h3 className="font-bold text-lg text-slate-900 uppercase tracking-tight italic">Buku Telur Produksi</h3>
+                                </div>
+
+                                <div className="overflow-x-auto p-4">
+                                    <table className="w-full text-center border-collapse border border-slate-200 min-w-max">
+                                        <thead>
+                                            <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest border-b border-slate-700">
+                                                <th rowSpan={2} className="px-3 py-3 border border-slate-700">Tgl</th>
+                                                <th rowSpan={2} className="px-3 py-3 border border-slate-700 bg-slate-800">Stok Awal</th>
+                                                <th colSpan={3} className="px-2 py-3 border border-slate-700 bg-emerald-900/50">Masuk (Produksi)</th>
+                                                <th colSpan={2} className="px-2 py-3 border border-slate-700 bg-amber-900/50">Keluar</th>
+                                                <th rowSpan={2} className="px-3 py-3 border border-slate-700 bg-slate-800 text-emerald-400">Stok Akhir</th>
+                                                <th rowSpan={2} className="px-3 py-3 border border-slate-700 italic">HDP</th>
+                                            </tr>
+                                            <tr className="bg-slate-800 text-slate-300 text-[8px] font-bold uppercase tracking-wider">
+                                                <th className="px-2 py-2 border border-slate-700">Normal</th>
+                                                <th className="px-2 py-2 border border-slate-700">Retak</th>
+                                                <th className="px-2 py-2 border border-slate-700">Pecah</th>
+                                                <th className="px-2 py-2 border border-slate-700">Jual/Free</th>
+                                                <th className="px-2 py-2 border border-slate-700">Buang</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="text-[10px] text-slate-700 font-medium">
+                                            {paginatedBalanceLogs.map((row, idx) => (
+                                                <tr key={idx} className="hover:bg-slate-50 border-b border-slate-100 transition-colors">
+                                                    <td className="px-3 py-3 font-bold bg-slate-50/50">{new Date(row.date).toLocaleDateString('id-ID')}</td>
+                                                    <td className="px-3 py-3 font-mono text-slate-400">{row.opening.toLocaleString()}</td>
+
+                                                    {/* MASUK */}
+                                                    <td className="px-2 py-3 font-bold text-emerald-600">{getNormalButir(row).toLocaleString()}</td>
+                                                    <td className="px-2 py-3 text-emerald-500">{(row.breakdown[EggCategory.RETAK] || 0).toLocaleString()}</td>
+                                                    <td className="px-2 py-3 text-emerald-400">{(row.breakdown[EggCategory.PECAH] || 0).toLocaleString()}</td>
+
+                                                    {/* KELUAR */}
+                                                    <td className="px-2 py-3 text-amber-600 font-bold">{(row.soldN + row.soldR + row.freeN + row.freeR).toLocaleString()}</td>
+                                                    <td className="px-2 py-3 text-rose-400">{row.waste || '-'}</td>
+
+                                                    <td className="px-3 py-3 font-black text-slate-900 bg-emerald-50/30">{row.closing.toLocaleString()}</td>
+                                                    <td className="px-3 py-3 font-bold text-slate-400 italic">{((row.eggCount / (currentPopulation || 1)) * 100).toFixed(1)}%</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        <tfoot className="bg-slate-50 font-black text-[10px] uppercase">
+                                            <tr>
+                                                <td className="px-3 py-4">TOTAL</td>
+                                                <td></td>
+                                                <td className="px-2 py-4 text-emerald-600 font-bold">{totalNormal.toLocaleString()}</td>
+                                                <td className="px-2 py-4">{totalRetak.toLocaleString()}</td>
+                                                <td className="px-2 py-4">{totalPecah.toLocaleString()}</td>
+                                                <td className="px-2 py-4 text-amber-600">{(totalNormalSold + totalRetakSold + totalNormalFree + totalRetakFree).toLocaleString()}</td>
+                                                <td className="px-2 py-4 text-rose-400">{filteredProdLogs.reduce((a, b) => a + (b.discardedEggs || 0), 0).toLocaleString()}</td>
+                                                <td className="px-3 py-4 text-slate-900 bg-emerald-50/50 italic">
+                                                    {productionWithBalance.length > 0 ? productionWithBalance[0].closing.toLocaleString() : 0}
+                                                </td>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                                <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase">Page {prodPage} of {Math.ceil(productionWithBalance.length / ITEMS_PER_PAGE) || 1}</span>
+                                    <div className="flex space-x-2">
+                                        <button onClick={() => setProdPage(Math.max(1, prodPage - 1))} disabled={prodPage === 1} className="p-1 bg-white border border-slate-200 rounded-sm disabled:opacity-50"><ChevronLeft size={16} /></button>
+                                        <button onClick={() => setProdPage(Math.min(Math.ceil(productionWithBalance.length / ITEMS_PER_PAGE), prodPage + 1))} disabled={prodPage >= Math.ceil(productionWithBalance.length / ITEMS_PER_PAGE)} className="p-1 bg-white border border-slate-200 rounded-sm disabled:opacity-50"><ChevronRight size={16} /></button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ HPP TELUR PANEL Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                        {activeTab === 'BUKU_TELUR' && (() => {
+                            // ============================================================
+                            // RUMUS HPP (Harga Pokok Produksi) TELUR PER BUTIR
+                            // HPP/butir = (Total Biaya Produksi) / (Total Telur Diproduksi)
+                            // Komponen biaya:
+                            //   1. Biaya Pakan, 2. TK, 3. Susut Ayam, 4. Susut Kandang, 5. Ops, 6. Cadangan
+                            const totalButirProduksi = filteredProdLogs.reduce((s, l) => s + (l.totalButir ?? 0), 0);
+                            const totalFeedConsumedKg = filteredProdLogs.reduce((s, l) => s + (l.feedConsumed || 0), 0);
+
+                            // Harga pakan aktual (weighted avg dari transaksi bahan)
+                            const feedCostTotal = bahanTransactions.reduce((s, t) => s + t.total, 0);
+                            const hargaPakanPerKg = totalFeedConsumedKg > 0 ? feedCostTotal / totalFeedConsumedKg : 0;
+
+                            const totalDays = filteredProdLogs.length || 1;
+                            const avgDailyProd = totalButirProduksi / totalDays;
+
+                            // Penyusutan ayam per butir
+                            const depLayerPerButir = farmSettings.layerLifeYears > 0 && avgDailyProd > 0
+                                ? (farmSettings.layerValueTotal - farmSettings.layerSalvageValue) / (farmSettings.layerLifeYears * 365 * avgDailyProd)
+                                : 0;
+
+                            // Penyusutan kandang per butir
+                            const depCagePerButir = farmSettings.cageLifeYears > 0 && avgDailyProd > 0
+                                ? (farmSettings.cageValueTotal - farmSettings.cageSalvageValue) / (farmSettings.cageLifeYears * 365 * avgDailyProd)
+                                : 0;
+
+                            // Biaya pakan per butir
+                            const biayaPakanPerButir = totalButirProduksi > 0
+                                ? (totalFeedConsumedKg * hargaPakanPerKg) / totalButirProduksi : 0;
+
+                            // Biaya operasional lainnya per butir
+                            const totalOpex = operationalExpenses.reduce((s, e) => s + e.amount, 0);
+                            const biayaOpsPerButir = totalButirProduksi > 0 ? totalOpex / totalButirProduksi : 0;
+
+                            // Biaya tenaga kerja per butir
+                            const totalGaji = expenseTransactions
+                                .filter(t => t.category === 'Tenaga Kerja' || t.description.toLowerCase().includes('gaji'))
+                                .reduce((s, t) => s + t.total, 0);
+                            const biayaTKPerButir = totalButirProduksi > 0 ? totalGaji / totalButirProduksi : 0;
+
+                            // === TOTAL BIAYA PRODUKSI ===
+                            const totalBiayaProduksi = bahanTransactions.reduce((s, t) => s + t.total, 0)
+                                + totalGaji + totalOpex
+                                + (depLayerPerButir + depCagePerButir) * (totalButirProduksi || 1);
+
+                            // === HPP DASAR ===
+                            const hppBase = totalButirProduksi > 0
+                                ? (totalBiayaProduksi + hppCadangan) / totalButirProduksi
+                                : 0;
+
+                            // === HARGA JUAL FINAL ===
+                            // Rumus: Harga_Jual = ((Biaya + Cadangan) / Total_Telur) Ãƒâ€” (1 + Margin/100)
+                            const hargaJualBase = hppBase * (1 + hppMarginPct / 100);
+
+                            // Komponen per butir untuk breakdown chart
+                            const biayaPakanPerButirFull = totalBiayaProduksi > 0 && totalButirProduksi > 0
+                                ? feedCostTotal / totalButirProduksi : biayaPakanPerButir;
+
+                            // Markup per kategori
+                            const QUALITY_MULT: Record<string, number> = {
+                                'Remban': 1.00,
+                                'Bujang': 0.93,
+                                'KS': 0.88,
+                                'Pelor': 0.82,
+                                'Bujang Retak': 0.76,
+                                'KS Retak': 0.68,
+                                'Retak': 0.60,
+                                'Pecah': 0.38,
+                            };
+
+                            const components = [
+                                { label: 'Biaya Pakan', val: biayaPakanPerButirFull, color: 'bg-amber-400', icon: <ShoppingCart size={10} /> },
+                                { label: 'Tenaga Kerja', val: biayaTKPerButir, color: 'bg-blue-400', icon: <Receipt size={10} /> },
+                                { label: 'Susut Ayam', val: depLayerPerButir, color: 'bg-rose-400', icon: <Bird size={10} /> },
+                                { label: 'Susut Kandang', val: depCagePerButir, color: 'bg-slate-400', icon: <Home size={10} /> },
+                                { label: 'Biaya Ops Lain', val: biayaOpsPerButir, color: 'bg-purple-400', icon: <ClipboardList size={10} /> },
+                                { label: 'Cadangan Risiko', val: totalButirProduksi > 0 ? hppCadangan / totalButirProduksi : 0, color: 'bg-orange-400', icon: <AlertTriangle size={10} /> },
+                            ];
+
+                            return (
+                                <div className="bg-white border border-slate-200 shadow-sm">
+                                    {/* Header */}
+                                    <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-amber-50 to-white">
+                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                            <div>
+                                                <h3 className="font-black text-sm text-amber-800 uppercase tracking-tight flex items-center gap-2">
+                                                    <Calculator size={16} /> HPP &amp; Estimasi Harga Jual Telur
+                                                </h3>
+                                                <p className="text-[9px] text-amber-600 font-bold uppercase tracking-widest mt-0.5">
+                                                    Rumus: Harga_Jual = ((Biaya + Cadangan) / Total_Butir) &times; (1 + Margin%)
+                                                </p>
+                                            </div>
+                                            {/* HPP Controls */}
+                                            <div className="flex items-center gap-3 flex-wrap">
+                                                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                                    <label className="text-[9px] font-black uppercase text-amber-700 whitespace-nowrap">Margin %</label>
+                                                    <input
+                                                        type="number" min={0} max={200} step={1}
+                                                        value={hppMarginPct}
+                                                        onChange={e => setHppMarginPct(Number(e.target.value))}
+                                                        className="w-16 bg-white border border-amber-300 rounded-sm px-2 py-1 text-sm font-black text-amber-800 focus:outline-none text-center"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+                                                    <label className="text-[9px] font-black uppercase text-orange-700 whitespace-nowrap">Cadangan Risiko (Rp)</label>
+                                                    <input
+                                                        type="number" min={0} step={100000}
+                                                        value={hppCadangan}
+                                                        onChange={e => setHppCadangan(Number(e.target.value))}
+                                                        className="w-32 bg-white border border-orange-300 rounded-sm px-2 py-1 text-sm font-black text-orange-800 focus:outline-none"
+                                                    />
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-[9px] text-slate-400 font-bold uppercase">Harga Jual / Butir (Grade A)</p>
+                                                    <p className="text-xl font-black text-amber-700">{formatCurrency(Math.ceil(hargaJualBase / 50) * 50)}</p>
+                                                    <p className="text-[9px] text-slate-400">HPP Dasar: {formatCurrency(hppBase)}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Komponen HPP */}
+                                        <div className="space-y-2">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><BarChart2 size={12} /> Komponen HPP per Butir</p>
+                                            {components.map(c => {
+                                                const pct = hppBase > 0 ? (c.val / hppBase) * 100 : 0;
+                                                return (
+                                                    <div key={c.label}>
+                                                        <div className="flex justify-between text-[10px] mb-0.5">
+                                                            <span className="font-bold text-slate-600 flex items-center gap-1">{c.icon} {c.label}</span>
+                                                            <span className="font-black text-slate-800">
+                                                                {formatCurrency(c.val)} <span className="text-slate-400 font-bold">({pct.toFixed(0)}%)</span>
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                                            <div className={`${c.color} h-1.5 rounded-full transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {totalButirProduksi === 0 && (
+                                                <p className="text-[9px] text-slate-400 italic text-center py-4">Belum cukup data produksi untuk menghitung HPP</p>
+                                            )}
+                                            {/* Summary box */}
+                                            <div className="mt-3 p-3 bg-slate-900 rounded-lg text-white">
+                                                <div className="flex justify-between text-[9px] mb-1">
+                                                    <span className="text-slate-400 font-bold">Total Butir Diproduksi</span>
+                                                    <span className="font-black">{totalButirProduksi.toLocaleString()} butir</span>
+                                                </div>
+                                                <div className="flex justify-between text-[9px] mb-1">
+                                                    <span className="text-slate-400 font-bold">Total Biaya Produksi</span>
+                                                    <span className="font-black">{formatCurrency(totalBiayaProduksi)}</span>
+                                                </div>
+                                                <div className="flex justify-between text-[9px] mb-1">
+                                                    <span className="text-slate-400 font-bold">Cadangan Risiko</span>
+                                                    <span className="font-black text-orange-400">{formatCurrency(hppCadangan)}</span>
+                                                </div>
+                                                <div className="border-t border-slate-700 pt-1 mt-1 flex justify-between text-[10px]">
+                                                    <span className="text-amber-400 font-black">HPP / Butir</span>
+                                                    <span className="font-black text-amber-400">{formatCurrency(hppBase)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Estimasi harga jual per kategori */}
+                                        <div>
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><TrendingUp size={12} /> Estimasi Harga Jual / Kategori</p>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left min-w-max">
+                                                    <thead><tr className="bg-slate-900 text-white text-[8px] font-black uppercase tracking-widest">
+                                                        <th className="px-3 py-2">Kategori</th>
+                                                        <th className="px-3 py-2 text-right">HPP</th>
+                                                        <th className="px-3 py-2 text-right">Faktor</th>
+                                                        <th className="px-3 py-2 text-right">Harga Jual</th>
+                                                        <th className="px-3 py-2 text-right">Harga Master</th>
+                                                        <th className="px-3 py-2 text-center">Status</th>
+                                                    </tr></thead>
+                                                    <tbody className="divide-y divide-slate-50 text-[10px]">
+                                                        {Object.entries(QUALITY_MULT).map(([cat, qMult]) => {
+                                                            const hargaJual = Math.ceil(hargaJualBase * qMult / 50) * 50;
+                                                            const masterPrice = (farmSettings.masterPrices || []).find(p => p.name === cat)?.price;
+                                                            const diff = masterPrice ? masterPrice - hargaJual : null;
+                                                            const isProfit = diff !== null && diff >= 0;
+                                                            return (
+                                                                <tr key={cat} className="hover:bg-slate-50">
+                                                                    <td className="px-3 py-2 font-bold text-slate-700">{cat}</td>
+                                                                    <td className="px-3 py-2 text-right font-mono text-slate-400 text-[9px]">{formatCurrency(hppBase * qMult)}</td>
+                                                                    <td className="px-3 py-2 text-right font-bold text-amber-600">&times;{qMult.toFixed(2)}</td>
+                                                                    <td className="px-3 py-2 text-right font-black text-emerald-700">{formatCurrency(hargaJual)}</td>
+                                                                    <td className={`px-3 py-2 text-right font-bold ${diff !== null ? (isProfit ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-300'}`}>
+                                                                        {masterPrice ? `${formatCurrency(masterPrice)} (${diff! >= 0 ? '+' : ''}${diff!.toLocaleString()})` : 'Ã¢â‚¬â€'}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-center">
+                                                                        {masterPrice ? (isProfit
+                                                                            ? <CheckCircle size={12} className="text-emerald-500 mx-auto" />
+                                                                            : <XCircle size={12} className="text-rose-500 mx-auto" />
+                                                                        ) : null}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <p className="text-[8px] text-slate-400 mt-2 italic flex items-center gap-1">
+                                                <CheckCircle size={9} className="text-emerald-500" /> = harga master &gt; HPP (margin aman).
+                                                <XCircle size={9} className="text-rose-500" /> = harga master &lt; HPP (risiko rugi).
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                        {activeTab === 'BUKU_TRANSAKSI' && (
+                            <div className="space-y-8">
+
+                                {/* SECTION 0: KAS & BANK BALANCES */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    {accounts.filter(a => a.isCashOrBank || a.name.toLowerCase().includes('kas') || a.name.toLowerCase().includes('bank')).map(acc => {
+                                        const { debit, credit } = getAccountBalance(acc.id);
+                                        const balance = debit - credit;
+                                        return (
+                                            <div key={acc.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden group">
+                                                <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                    <Wallet size={80} />
+                                                </div>
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <div className="bg-emerald-50 p-1.5 rounded-lg text-emerald-600"><Wallet size={14} /></div>
+                                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{acc.name}</p>
+                                                </div>
+                                                <p className="text-lg font-black text-slate-900">{formatCurrency(balance)}</p>
+                                                <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">No. Rek: {acc.code}</p>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* SECTION 1: PENJUALAN TELUR */}
+                                <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
+                                    <div className="px-8 py-5 border-b border-slate-100 bg-emerald-50 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-base text-emerald-800 uppercase tracking-tight italic">Buku Penjualan Telur</h3>
+                                            <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest mt-0.5">Jurnal Pendapatan Ã‚Â· {salesTransactions.length} transaksi</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-widest">Total Pendapatan</p>
+                                            <p className="text-lg font-black text-emerald-700">{formatCurrency(salesTransactions.reduce((a, t) => a + t.total, 0))}</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse min-w-max">
+                                            <thead>
+                                                <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+                                                    <th className="px-3 py-3 w-8">No</th>
+                                                    <th className="px-3 py-3">Tanggal Transaksi</th>
+                                                    <th className="px-3 py-3">Barang / Jasa</th>
+                                                    <th className="px-3 py-3 text-center">Qty</th>
+                                                    <th className="px-3 py-3 text-right">Harga Satuan</th>
+                                                    <th className="px-3 py-3 text-right">Total Harga</th>
+                                                    <th className="px-3 py-3">Tgl Bayar</th>
+                                                    <th className="px-3 py-3">Nama Pembeli</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-[10px] divide-y divide-slate-50">
+                                                {salesTransactions.length === 0 ? (
+                                                    <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada data penjualan telur</td></tr>
+                                                ) : salesTransactions.map((t, idx) => (
+                                                    <tr key={t.id} className="hover:bg-emerald-50/30 transition-colors">
+                                                        <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
+                                                        <td className="px-3 py-3 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                        <td className="px-3 py-3 font-bold text-slate-800">{t.description}</td>
+                                                        <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{t.qty}</td>
+                                                        <td className="px-3 py-3 text-right font-mono text-slate-600">{t.price > 0 ? formatCurrency(t.price) : '-'}</td>
+                                                        <td className="px-3 py-3 text-right font-mono font-black text-emerald-700">{formatCurrency(t.total)}</td>
+                                                        <td className="px-3 py-3 text-slate-500">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                        <td className="px-3 py-3 text-slate-500">{t.account}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            {salesTransactions.length > 0 && (
+                                                <tfoot className="bg-emerald-50 border-t-2 border-emerald-200">
+                                                    <tr>
+                                                        <td colSpan={5} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-emerald-700">Total Penjualan Telur</td>
+                                                        <td className="px-3 py-3 text-right font-black text-emerald-700 font-mono">{formatCurrency(salesTransactions.reduce((a, t) => a + t.total, 0))}</td>
+                                                        <td colSpan={2}></td>
+                                                    </tr>
+                                                </tfoot>
+                                            )}
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* SECTION 2: PENGELUARAN BAHAN */}
+                                <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
+                                    <div className="px-8 py-5 border-b border-slate-100 bg-amber-50 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-base text-amber-800 uppercase tracking-tight italic">Pengeluaran Bahan & Stok</h3>
+                                            <p className="text-[9px] text-amber-600 font-bold uppercase tracking-widest mt-0.5">Pembelian Pakan, Obat, Bahan Baku Ã‚Â· {bahanTransactions.length} transaksi</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[9px] text-amber-600 font-bold uppercase tracking-widest">Total Pengeluaran</p>
+                                            <p className="text-lg font-black text-amber-700">{formatCurrency(bahanTransactions.reduce((a, t) => a + t.total, 0))}</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse min-w-max">
+                                            <thead>
+                                                <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+                                                    <th className="px-3 py-3 w-8">No</th>
+                                                    <th className="px-3 py-3">Tanggal Transaksi</th>
+                                                    <th className="px-3 py-3">Barang / Jasa</th>
+                                                    <th className="px-3 py-3 text-center">Qty</th>
+                                                    <th className="px-3 py-3 text-right">Harga Satuan</th>
+                                                    <th className="px-3 py-3 text-right">Total Harga</th>
+                                                    <th className="px-3 py-3">Tgl Bayar</th>
+                                                    <th className="px-3 py-3">Nama Request</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-[10px] divide-y divide-slate-50">
+                                                {bahanTransactions.length === 0 ? (
+                                                    <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada pengeluaran bahan</td></tr>
+                                                ) : bahanTransactions.map((t, idx) => (
+                                                    <tr key={t.id} className="hover:bg-amber-50/30 transition-colors">
+                                                        <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
+                                                        <td className="px-3 py-3 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                        <td className="px-3 py-3 font-bold text-slate-800">{t.description}</td>
+                                                        <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{t.qty}</td>
+                                                        <td className="px-3 py-3 text-right font-mono text-slate-600">{t.price > 0 ? formatCurrency(t.price) : '-'}</td>
+                                                        <td className="px-3 py-3 text-right font-mono font-black text-rose-700">{formatCurrency(t.total)}</td>
+                                                        <td className="px-3 py-3 text-slate-500">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                        <td className="px-3 py-3 text-slate-500">{t.account}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            {bahanTransactions.length > 0 && (
+                                                <tfoot className="bg-amber-50 border-t-2 border-amber-200">
+                                                    <tr>
+                                                        <td colSpan={5} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-amber-700">Total Pengeluaran Bahan</td>
+                                                        <td className="px-3 py-3 text-right font-black text-rose-700 font-mono">{formatCurrency(bahanTransactions.reduce((a, t) => a + t.total, 0))}</td>
+                                                        <td colSpan={2}></td>
+                                                    </tr>
+                                                </tfoot>
+                                            )}
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* SECTION 3: PENGELUARAN OPERASIONAL */}
+                                <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
+                                    <div className="px-8 py-5 border-b border-slate-100 bg-rose-50 flex items-center justify-between">
+                                        <div>
+                                            <h3 className="font-bold text-base text-rose-800 uppercase tracking-tight italic">Pengeluaran Operasional</h3>
+                                            <p className="text-[9px] text-rose-600 font-bold uppercase tracking-widest mt-0.5">Gaji, Aset, Biaya Operasional Ã‚Â· {operasionalTransactions.length} transaksi</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[9px] text-rose-600 font-bold uppercase tracking-widest">Total Pengeluaran</p>
+                                            <p className="text-lg font-black text-rose-700">{formatCurrency(operasionalTransactions.reduce((a, t) => a + t.total, 0))}</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse min-w-max">
+                                            <thead>
+                                                <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+                                                    <th className="px-3 py-3 w-8">No</th>
+                                                    <th className="px-3 py-3">Tanggal Transaksi</th>
+                                                    <th className="px-3 py-3">Barang / Jasa</th>
+                                                    <th className="px-3 py-3 text-center">Qty</th>
+                                                    <th className="px-3 py-3 text-right">Harga Satuan</th>
+                                                    <th className="px-3 py-3 text-right">Total Harga</th>
+                                                    <th className="px-3 py-3">Tgl Bayar</th>
+                                                    <th className="px-3 py-3">Nama Request</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-[10px] divide-y divide-slate-50">
+                                                {operasionalTransactions.length === 0 ? (
+                                                    <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada pengeluaran operasional</td></tr>
+                                                ) : operasionalTransactions.map((t, idx) => (
+                                                    <tr key={t.id} className="hover:bg-rose-50/30 transition-colors">
+                                                        <td className="px-3 py-3 text-slate-400 font-bold">{idx + 1}</td>
+                                                        <td className="px-3 py-3 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                        <td className="px-3 py-3 font-bold text-slate-800">{t.description}</td>
+                                                        <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">{t.qty}</td>
+                                                        <td className="px-3 py-3 text-right font-mono text-slate-600">{t.price > 0 ? formatCurrency(t.price) : '-'}</td>
+                                                        <td className="px-3 py-3 text-right font-mono font-black text-rose-700">{formatCurrency(t.total)}</td>
+                                                        <td className="px-3 py-3 text-slate-500">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                        <td className="px-3 py-3 text-slate-500">{t.account}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                            {operasionalTransactions.length > 0 && (
+                                                <tfoot className="bg-rose-50 border-t-2 border-rose-200">
+                                                    <tr>
+                                                        <td colSpan={5} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-rose-700">Total Operasional</td>
+                                                        <td className="px-3 py-3 text-right font-black text-rose-700 font-mono">{formatCurrency(operasionalTransactions.reduce((a, t) => a + t.total, 0))}</td>
+                                                        <td colSpan={2}></td>
+                                                    </tr>
+                                                </tfoot>
+                                            )}
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* SUMMARY ROW */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="bg-emerald-900 text-white p-4 lg:p-5">
+                                        <p className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 mb-1">Total Pendapatan</p>
+                                        <p className="text-lg lg:text-xl font-black text-emerald-300">{formatCurrency(salesTransactions.reduce((a, t) => a + t.total, 0))}</p>
+                                    </div>
+                                    <div className="bg-rose-900 text-white p-4 lg:p-5">
+                                        <p className="text-[9px] font-bold uppercase tracking-widest text-rose-400 mb-1">Total Pengeluaran</p>
+                                        <p className="text-lg lg:text-xl font-black text-rose-300">{formatCurrency([...bahanTransactions, ...operasionalTransactions].reduce((a, t) => a + t.total, 0))}</p>
+                                    </div>
+                                    <div className={cn("p-4 lg:p-5 text-white", netProfit >= 0 ? 'bg-slate-900' : 'bg-rose-950')}>
+                                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Laba / Rugi Bersih</p>
+                                        <p className={cn("text-lg lg:text-xl font-black", netProfit >= 0 ? 'text-amber-400' : 'text-rose-400')}>{netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit)}</p>
+                                    </div>
+                                </div>
+
+                                {/* MODAL MASUK */}
+                                {modalTransactions.length > 0 && (
+                                    <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
+                                        <div className="px-8 py-4 border-b border-slate-100 bg-slate-50">
+                                            <h3 className="font-bold text-sm text-slate-700 uppercase tracking-tight italic">Modal Masuk</h3>
+                                        </div>
+                                        <div className="p-4 space-y-2">
+                                            {modalTransactions.map((m, i) => (
+                                                <div key={i} className="flex justify-between items-center p-3 bg-slate-50 border border-slate-100 group">
+                                                    <span className="text-[11px] font-bold text-slate-600">{m.description} Ã‚Â· {new Date(m.date).toLocaleDateString('id-ID')}</span>
+                                                    <div className="flex items-center space-x-2">
+                                                        <span className="text-emerald-600 font-black text-sm">{formatCurrency(m.total)}</span>
+                                                        <button onClick={() => { setEditingModal(m); setIsModalAwalOpen(true); }} className="text-slate-400 hover:text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity"><Edit2 size={12} /></button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'ASET' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {houseAssets.map((asset) => {
+                                    const depreciation = calculateDepreciation(asset);
+                                    const currentValue = asset.purchasePrice - depreciation;
+                                    return (
+                                        <div
+                                            key={asset.id}
+                                            onClick={() => {
+                                                setSelectedAssetId(asset.id);
+                                                setIsMaintenanceModalOpen(true);
+                                            }}
+                                            className="bg-white p-6 border border-slate-200 shadow-sm space-y-4 group hover:border-amber-500 transition-all cursor-pointer relative overflow-hidden"
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{asset.category}</p>
+                                                        <button onClick={(e) => { e.stopPropagation(); setEditingAsset(asset); setIsAssetModalOpen(true); }} className="text-slate-400 hover:text-amber-500"><Edit2 size={12} /></button>
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-800 mt-1 uppercase tracking-tight">{asset.name}</h4>
+                                                </div>
+                                                <span className={cn(
+                                                    "text-[9px] font-black uppercase px-2 py-0.5 rounded-sm border",
+                                                    asset.condition === 'BAIK' ? "bg-emerald-50 text-emerald-600 border-emerald-100" :
+                                                        asset.condition === 'SERVIS' ? "bg-amber-50 text-amber-600 border-amber-100" :
+                                                            "bg-rose-50 text-rose-600 border-rose-100"
+                                                )}>
+                                                    {asset.condition}
+                                                </span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                                                <div>
+                                                    <p className="text-[8px] font-bold text-slate-400 uppercase">Nilai Awal</p>
+                                                    <p className="text-xs font-black text-slate-600">{formatCurrency(asset.purchasePrice)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[8px] font-bold text-slate-400 uppercase">Penyusutan</p>
+                                                    <p className="text-xs font-black text-rose-500">-{formatCurrency(depreciation)}</p>
+                                                </div>
+                                            </div>
+                                            <div className="bg-slate-900 p-3 flex justify-between items-center">
+                                                <span className="text-[8px] font-bold text-slate-400 uppercase">Nilai Buku Saat Ini</span>
+                                                <span className="text-xs font-black text-amber-500">{formatCurrency(currentValue)}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                <button
+                                    onClick={() => { setEditingAsset(null); setAssetOwnershipType('BELI'); setIsAssetModalOpen(true); }}
+                                    className="bg-slate-50 border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center text-slate-400 hover:border-amber-500 hover:text-amber-500 transition-colors"
+                                >
+                                    <Plus size={32} />
+                                    <span className="text-[10px] font-bold uppercase mt-3">Tambah Aset Inventaris</span>
+                                </button>
+                            </div>
+                        )}
+
+                        {activeTab === 'AKUNTANSI' && (
+                            <div className="space-y-8">
+                                <div className="bg-white border border-slate-200 shadow-sm">
+                                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                        <h3 className="font-bold text-sm text-slate-800 uppercase tracking-tight italic">Hutang & Piutang (AP / AR)</h3>
+                                        <button onClick={() => setIsApArModalOpen(true)} className="bg-slate-900 text-white px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 flex items-center gap-2">
+                                            <Plus size={12} /> Tambah Tagihan
+                                        </button>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse min-w-max">
+                                            <thead>
+                                                <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+                                                    <th className="px-3 py-3">Tgl Jatuh Tempo</th>
+                                                    <th className="px-3 py-3">Jenis</th>
+                                                    <th className="px-3 py-3">Mitra / Keterangan</th>
+                                                    <th className="px-3 py-3 text-right">Total Tagihan</th>
+                                                    <th className="px-3 py-3 text-right">Sisa Terutang</th>
+                                                    <th className="px-3 py-3 text-center">Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-[10px] divide-y divide-slate-100">
+                                                {apArRecords.length === 0 ? (
+                                                    <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400 font-bold uppercase">Belum ada Hutang / Piutang</td></tr>
+                                                ) : apArRecords.map((r, i) => (
+                                                    <tr key={i} className="hover:bg-slate-50">
+                                                        <td className="px-3 py-3 font-bold text-slate-700">{r.dueDate ? new Date(r.dueDate).toLocaleDateString('id-ID') : '-'}</td>
+                                                        <td className="px-3 py-3 font-bold">
+                                                            <span className={cn("px-2 py-1 rounded-sm text-[9px]", r.type === 'HUTANG' ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600")}>
+                                                                {r.type === 'HUTANG' ? 'HUTANG (AP)' : 'PIUTANG (AR)'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-3 py-3 text-slate-600 font-bold">{r.entityName}</td>
+                                                        <td className="px-3 py-3 text-right font-mono font-bold">{formatCurrency(r.amount)}</td>
+                                                        <td className="px-3 py-3 text-right font-mono font-bold text-rose-600">{formatCurrency(r.remainingAmount)}</td>
+                                                        <td className="px-3 py-3 text-center">
+                                                            <span className={cn("px-2 py-1 rounded-sm text-[9px] font-bold uppercase", r.status === 'PAID' ? "bg-emerald-100 text-emerald-700" : r.status === 'PARTIAL' ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700")}>
+                                                                {r.status}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border border-slate-200 shadow-sm">
+                                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                                        <h3 className="font-bold text-sm text-slate-800 uppercase tracking-tight italic">Jurnal Umum (Double-Entry)</h3>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse min-w-max">
+                                            <thead>
+                                                <tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+                                                    <th className="px-3 py-3">Tanggal</th>
+                                                    <th className="px-3 py-3">Keterangan</th>
+                                                    <th className="px-3 py-3">Kode Akun</th>
+                                                    <th className="px-3 py-3">Nama Akun</th>
+                                                    <th className="px-3 py-3 text-right">Debit</th>
+                                                    <th className="px-3 py-3 text-right">Kredit</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-[10px] divide-y divide-slate-100">
+                                                {journalEntries.length === 0 ? (
+                                                    <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400 font-bold uppercase">Belum ada jurnal entri</td></tr>
+                                                ) : journalEntries.map((j) => {
+                                                    const linesForJournal = journalLines.filter(l => l.journalId === j.id);
+                                                    return (
+                                                        <React.Fragment key={j.id}>
+                                                            {linesForJournal.map((line, i) => {
+                                                                const account = accounts.find(a => a.id === line.accountId);
+                                                                return (
+                                                                    <tr key={i} className="hover:bg-slate-50">
+                                                                        {i === 0 && (
+                                                                            <>
+                                                                                <td className="px-3 py-3 font-bold text-slate-700 border-b border-slate-200" rowSpan={linesForJournal.length}>{new Date(j.date).toLocaleDateString('id-ID')}</td>
+                                                                                <td className="px-3 py-3 text-slate-600 font-bold border-b border-slate-200" rowSpan={linesForJournal.length}>{j.description}</td>
+                                                                            </>
+                                                                        )}
+                                                                        <td className="px-3 py-3 font-mono text-slate-500">{account?.code}</td>
+                                                                        <td className="px-3 py-3 font-bold text-slate-700" style={{ paddingLeft: line.credit > 0 ? '2rem' : '0.75rem' }}>{account?.name}</td>
+                                                                        <td className="px-3 py-3 text-right font-mono font-bold">{line.debit > 0 ? formatCurrency(line.debit) : '-'}</td>
+                                                                        <td className="px-3 py-3 text-right font-mono font-bold">{line.credit > 0 ? formatCurrency(line.credit) : '-'}</td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                            <tr className="bg-slate-100/50"><td colSpan={6} className="h-2"></td></tr>
+                                                        </React.Fragment>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB: PENGELUARAN HARIAN Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                        {activeTab === 'PENGELUARAN' && (
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight italic">Pengeluaran Operasional Harian</h3>
+                                        <p className="text-xs text-slate-500 mt-1">Listrik, BBM, Konsumsi, dan biaya non-bahan baku lainnya.</p>
+                                    </div>
+                                    <button onClick={() => setIsOpexModalOpen(true)} className="bg-slate-900 text-white px-5 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center gap-2">
+                                        <Plus size={14} /> Tambah Pengeluaran
+                                    </button>
+                                </div>
+                                <div className="bg-white border border-slate-200 shadow-sm overflow-x-auto">
+                                    <table className="w-full text-left min-w-max">
+                                        <thead><tr className="bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+                                            <th className="px-4 py-3">Tanggal</th><th className="px-4 py-3">Kategori</th>
+                                            <th className="px-4 py-3">Keterangan</th><th className="px-4 py-3">Dibayar dari</th>
+                                            <th className="px-4 py-3 text-right">Jumlah</th>
+                                        </tr></thead>
+                                        <tbody className="divide-y divide-slate-100 text-[11px] font-bold">
+                                            {operationalExpenses.length === 0 ? (
+                                                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400 uppercase">Belum ada pengeluaran operasional</td></tr>
+                                            ) : [...operationalExpenses].reverse().map(e => (
+                                                <tr key={e.id} className="hover:bg-slate-50">
+                                                    <td className="px-4 py-3">{new Date(e.date).toLocaleDateString('id-ID')}</td>
+                                                    <td className="px-4 py-3"><span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-sm text-[9px] uppercase border border-amber-100">{e.category}</span></td>
+                                                    <td className="px-4 py-3 text-slate-600">{e.description}</td>
+                                                    <td className="px-4 py-3 text-slate-500">{accounts.find(a => a.id === e.paymentAccountId)?.name || '-'}</td>
+                                                    <td className="px-4 py-3 text-right text-rose-600">{formatCurrency(e.amount)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                        {operationalExpenses.length > 0 && (
+                                            <tfoot><tr className="bg-slate-50 border-t-2 border-slate-200">
+                                                <td colSpan={4} className="px-4 py-3 font-black text-[10px] uppercase text-slate-700">Total</td>
+                                                <td className="px-4 py-3 text-right font-black text-rose-600">{formatCurrency(operationalExpenses.reduce((s, e) => s + e.amount, 0))}</td>
+                                            </tr></tfoot>
+                                        )}
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB: BUKU BESAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                        {activeTab === 'BUKU_BESAR' && (
+                            <div className="space-y-6">
+                                <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+                                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight italic">Buku Besar (General Ledger)</h3>
+                                    <select value={glAccountFilter} onChange={e => setGlAccountFilter(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-sm px-4 py-2 text-sm font-bold focus:outline-none focus:border-amber-500">
+                                        <option value="">-- Semua Akun --</option>
+                                        {accounts.map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
+                                    </select>
+                                </div>
+                                {accounts.filter(a => !glAccountFilter || a.id === glAccountFilter).map(acc => {
+                                    const lines = journalLines.filter(l => l.accountId === acc.id);
+                                    if (lines.length === 0) return null;
+                                    let runningBalance = 0;
+                                    const isDebitNormal = acc.category === AccountCategory.ASSET || acc.category === AccountCategory.EXPENSE;
+                                    return (
+                                        <div key={acc.id} className="bg-white border border-slate-200 shadow-sm overflow-x-auto">
+                                            <div className="px-6 py-3 bg-slate-900 text-white flex justify-between items-center min-w-max">
+                                                <span className="font-black text-xs uppercase tracking-widest">{acc.code} Ã¢â‚¬â€ {acc.name}</span>
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase">{acc.category}</span>
+                                            </div>
+                                            <table className="w-full text-left min-w-max">
+                                                <thead><tr className="bg-slate-50 text-[9px] font-black uppercase text-slate-500 border-b border-slate-200">
+                                                    <th className="px-4 py-2">Tanggal</th><th className="px-4 py-2">Keterangan</th>
+                                                    <th className="px-4 py-2 text-right">Debit</th><th className="px-4 py-2 text-right">Kredit</th>
+                                                    <th className="px-4 py-2 text-right">Saldo</th>
+                                                </tr></thead>
+                                                <tbody className="text-[11px] font-bold divide-y divide-slate-50">
+                                                    {lines.map((line, idx) => {
+                                                        const journal = journalEntries.find(j => j.id === line.journalId);
+                                                        runningBalance += isDebitNormal ? (line.debit - line.credit) : (line.credit - line.debit);
+                                                        return (
+                                                            <tr key={idx} className="hover:bg-slate-50">
+                                                                <td className="px-4 py-2">{journal ? new Date(journal.date).toLocaleDateString('id-ID') : '-'}</td>
+                                                                <td className="px-4 py-2 text-slate-600">{journal?.description || '-'}</td>
+                                                                <td className="px-4 py-2 text-right text-emerald-600">{line.debit > 0 ? formatCurrency(line.debit) : '-'}</td>
+                                                                <td className="px-4 py-2 text-right text-rose-500">{line.credit > 0 ? formatCurrency(line.credit) : '-'}</td>
+                                                                <td className={cn("px-4 py-2 text-right font-black", runningBalance >= 0 ? 'text-slate-900' : 'text-rose-600')}>{formatCurrency(Math.abs(runningBalance))}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB: NERACA SALDO Ã¢â€â‚¬Ã¢â€â‚¬ */}
+                        {activeTab === 'NERACA_SALDO' && <NeracaSaldo />}
+                    </div>
+                </div>
+            </div>
+        </div>
+            {/* MODALS */ }
             <Modal isOpen={isAssetModalOpen} onClose={() => { setIsAssetModalOpen(false); setAssetOwnershipType('BELI'); }} title={editingAsset ? "Edit Aset" : "Tambah Aset Baru"}>
                 <form onSubmit={handleSaveAsset} className="space-y-6">
                     {/* Ownership Type — hanya tampil saat tambah baru */}
@@ -836,7 +1496,7 @@ export default function Finance() {
                                             : "border-slate-200 bg-slate-50 hover:border-slate-300"
                                     )}
                                 >
-                                    <p className={cn("text-[11px] font-black uppercase tracking-tight", assetOwnershipType === 'BELI' ? 'text-amber-700' : 'text-slate-500')}>🛒 Beli</p>
+                                     <p className={cn("text-[11px] font-black uppercase tracking-tight flex items-center gap-2", assetOwnershipType === 'BELI' ? 'text-amber-700' : 'text-slate-500')}><ShoppingCart size={14}/> Beli</p>
                                     <p className="text-[9px] text-slate-400 mt-1 leading-relaxed">Aset dibeli. Akan dicatat sebagai pengeluaran di Buku Kas.</p>
                                 </button>
                                 <button
@@ -849,13 +1509,13 @@ export default function Finance() {
                                             : "border-slate-200 bg-slate-50 hover:border-slate-300"
                                     )}
                                 >
-                                    <p className={cn("text-[11px] font-black uppercase tracking-tight", assetOwnershipType === 'MILIK_PRIBADI' ? 'text-white' : 'text-slate-500')}>🏠 Milik Pribadi</p>
+                                    <p className={cn("text-[11px] font-black uppercase tracking-tight flex items-center gap-2", assetOwnershipType === 'MILIK_PRIBADI' ? 'text-white' : 'text-slate-500')}><Home size={14}/> Milik Pribadi</p>
                                     <p className={cn("text-[9px] mt-1 leading-relaxed", assetOwnershipType === 'MILIK_PRIBADI' ? 'text-slate-400' : 'text-slate-400')}>Aset milik pemilik. Tidak dicatat sebagai pembelian di laporan keuangan.</p>
                                 </button>
                             </div>
                             {assetOwnershipType === 'MILIK_PRIBADI' && (
                                 <div className="mt-2 p-3 bg-slate-800 border border-slate-700 flex items-start gap-2">
-                                    <span className="text-amber-400 text-xs mt-0.5">ℹ</span>
+                                    <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5"/>
                                     <p className="text-[9px] text-slate-400 leading-relaxed">Aset ini hanya akan didaftarkan ke registri aset (untuk tracking penyusutan & kondisi), namun <strong className="text-white">tidak akan muncul sebagai pengeluaran</strong> di Buku Kas / Laporan Keuangan.</p>
                                 </div>
                             )}
@@ -893,6 +1553,16 @@ export default function Finance() {
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">{assetOwnershipType === 'BELI' ? 'Tanggal Beli' : 'Tanggal Perolehan / Estimasi'}</label>
                         <input name="purchaseDate" required type="date" defaultValue={editingAsset ? editingAsset.purchaseDate.split('T')[0] : new Date().toISOString().split('T')[0]} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
                     </div>
+                    {assetOwnershipType === 'BELI' && (
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Metode Pembayaran (Rekening)</label>
+                            <select name="accountId" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                                {accounts.filter(a => a.isCashOrBank).map(a => (
+                                    <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     <button type="submit" className={cn(
                         "w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] transition-all",
                         assetOwnershipType === 'MILIK_PRIBADI'
@@ -913,6 +1583,14 @@ export default function Finance() {
                     <div>
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Keterangan</label>
                         <input name="description" required type="text" defaultValue={editingModal?.description} placeholder="Contoh: Tambahan Modal Sendiri" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Rekening Penerima</label>
+                        <select name="accountId" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                            {accounts.filter(a => a.isCashOrBank).map(a => (
+                                <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                            ))}
+                        </select>
                     </div>
                     <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em]">Simpan Modal</button>
                 </form>
@@ -944,8 +1622,8 @@ export default function Finance() {
                         </form>
                         <div className="border-t border-slate-200 pt-6">
                             <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-4">Histori Perawatan</h5>
-                            <div className="max-h-[150px] overflow-y-auto border border-slate-100">
-                                <table className="w-full text-left text-[10px]">
+                            <div className="max-h-[150px] overflow-y-auto overflow-x-auto border border-slate-100">
+                                <table className="w-full text-left text-[10px] min-w-max">
                                     <thead className="bg-slate-50 border-b border-slate-200 uppercase font-black">
                                         <tr><th className="px-3 py-2">Tgl</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Oleh</th><th className="px-3 py-2">Catatan</th></tr>
                                     </thead>
@@ -964,7 +1642,98 @@ export default function Finance() {
                         </div>
                     </div>
                 )}
-            </Modal>
+                </Modal>
+
+    {/* Ã¢â€â‚¬Ã¢â€â‚¬ MODAL: PENGELUARAN OPERASIONAL HARIAN Ã¢â€â‚¬Ã¢â€â‚¬ */ }
+    <Modal isOpen={isOpexModalOpen} onClose={() => setIsOpexModalOpen(false)} title="Tambah Pengeluaran Harian">
+        <form onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target as HTMLFormElement);
+            addOperationalExpenseRecord({
+                houseId: activeHouse?.id,
+                date: fd.get('date') as string,
+                category: fd.get('category') as string,
+                description: fd.get('description') as string,
+                amount: Number(fd.get('amount')),
+                accountId: fd.get('accountId') as string,
+                paymentAccountId: fd.get('paymentAccountId') as string,
+            });
+            setIsOpexModalOpen(false);
+            Swal.fire({ title: 'Berhasil!', text: 'Pengeluaran harian telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
+        }} className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Tanggal</label>
+                    <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Kategori</label>
+                    <select name="category" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                        {Object.values(ExpenseCategory).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                </div>
+                <div className="col-span-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Keterangan</label>
+                    <input name="description" type="text" required placeholder="Cth: Bayar tagihan PLN bulan Mei" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jumlah (Rp)</label>
+                    <input name="amount" type="number" min="1" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 font-mono" />
+                </div>
+                <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Akun Beban (Debit)</label>
+                    <select name="accountId" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                        {accounts.filter(a => a.category === AccountCategory.EXPENSE).map(a => <option key={a.id} value={a.id}>{a.code} - {a.name}</option>)}
+                    </select>
+                </div>
+                <div className="col-span-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Dibayar dari Rekening (Kredit)</label>
+                    <select name="paymentAccountId" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                        {accounts.filter(a => a.isCashOrBank).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                </div>
+            </div>
+            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800">Simpan & Jurnal Otomatis</button>
+        </form>
+    </Modal>
+
+    {/* Ã¢â€â‚¬Ã¢â€â‚¬ MODAL: DANA PEREMAJAAN Ã¢â€â‚¬Ã¢â€â‚¬ */ }
+    <Modal isOpen={isSinkingModalOpen} onClose={() => setIsSinkingModalOpen(false)} title="Ã°Å¸â€â€ž Catat Realisasi Dana Peremajaan">
+        <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg mb-4">
+            <p className="text-[10px] font-bold text-amber-700 leading-relaxed">
+                Dana peremajaan dicatat sebagai alokasi dari keuntungan operasional untuk membiayai penggantian ayam (DOC baru) atau renovasi kandang di masa mendatang. Dana ini dijurnal sebagai <span className="font-black">Debit: Dana Cadangan</span>.
+            </p>
         </div>
+        <form onSubmit={(e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target as HTMLFormElement);
+            realizeSinkingFund(Number(fd.get('amount')), fd.get('type') as SinkingFundType, fd.get('notes') as string);
+            setIsSinkingModalOpen(false);
+            Swal.fire({ title: 'Berhasil!', text: 'Dana peremajaan telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
+        }} className="space-y-5">
+            <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Tujuan Dana Peremajaan</label>
+                <select name="type" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                    <option value={SinkingFundType.DOC}>Ã°Å¸Ââ€ DOC Baru Ã¢â‚¬â€ Peremajaan Ayam Layer</option>
+                    <option value={SinkingFundType.RENOVATION}>Ã°Å¸Ââ€”Ã¯Â¸Â Peremajaan Kandang Ã¢â‚¬â€ Renovasi Bangunan</option>
+                    <option value={SinkingFundType.RESERVE}>Ã°Å¸ÂÂ¦ Dana Cadangan Umum</option>
+                </select>
+            </div>
+            <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Nominal Alokasi (Rp)</label>
+                <input name="amount" type="number" min="1" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 font-mono" />
+            </div>
+            <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Catatan / Keterangan</label>
+                <textarea name="notes" placeholder="Cth: Alokasi bulan Mei 2026 untuk DOC batch berikutnya" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 h-20" />
+            </div>
+            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 flex items-center justify-center gap-2">
+                Simpan & Jurnal Otomatis
+            </button>
+        </form>
+    </Modal>
+
+        </>
     );
 }
+

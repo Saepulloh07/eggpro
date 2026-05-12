@@ -21,9 +21,10 @@ import Population from './pages/Population';
 import { HouseProvider } from './HouseContext';
 
 import { FlockProvider } from './FlockContext';
-import { GlobalProvider } from './GlobalContext';
+import { GlobalProvider, useGlobalData } from './GlobalContext';
 import { UserRole } from './types';
 import { ShieldOff } from 'lucide-react';
+import { useHouse } from './HouseContext';
 
 // ─── Access Denied Panel ──────────────────────────────────────────────────────
 
@@ -50,10 +51,57 @@ function AccessDenied({ tab }: { tab: string }) {
 
 function AppContent() {
   const { user, isLoading, sidebarPermissions } = useApp();
+  const { farmSettings, inventory, updateInventory, createOperationalExpense } = useGlobalData();
+  const { houses } = useHouse();
 
   // WORKER defaults to production tab; others start at dashboard
   const defaultTab = user?.role === UserRole.WORKER ? 'production' : 'dashboard';
   const [activeTab, setActiveTab] = useState(defaultTab);
+  
+  // Daily Cron Job: Egg Allowance for Workers
+  React.useEffect(() => {
+    if (isLoading || !houses || houses.length === 0 || !inventory || inventory.length === 0) return;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const lastDeduction = localStorage.getItem('last_egg_allowance_date');
+    
+    if (lastDeduction !== today) {
+      const allowancePerWorker = farmSettings.workerEggAllowancePerDay || 5;
+      let totalDeducted = 0;
+      
+      houses.forEach(house => {
+        const workers = house.workerCount || 0;
+        if (workers > 0) {
+          const deductionAmount = workers * allowancePerWorker;
+          const eggStocks = inventory.filter(i => i.houseId === house.id && i.type === 'EGG_STOCK' && i.quantity > 0);
+          
+          let remainingToDeduct = deductionAmount;
+          for (const stock of eggStocks) {
+            if (remainingToDeduct <= 0) break;
+            const amountToDeduct = Math.min(stock.quantity, remainingToDeduct);
+            updateInventory(stock.id, -amountToDeduct);
+            remainingToDeduct -= amountToDeduct;
+          }
+          
+          totalDeducted += (deductionAmount - remainingToDeduct);
+        }
+      });
+      
+      if (totalDeducted > 0) {
+          createOperationalExpense({
+            date: today,
+            description: `Jatah Telur Anak Kandang (${totalDeducted} butir)`,
+            qty: `${totalDeducted} butir`,
+            price: 0,
+            total: totalDeducted * 2000, // Estimate 2000 per egg for cost
+            account: 'Persediaan',
+            category: 'Jatah Pekerja'
+          }, 'acc-beban-gaji', 'acc-persediaan');
+      }
+      
+      localStorage.setItem('last_egg_allowance_date', today);
+    }
+  }, [isLoading, houses, inventory, farmSettings, updateInventory, createOperationalExpense]);
 
   if (isLoading) {
     return (
