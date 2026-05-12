@@ -393,29 +393,7 @@ export default function Production() {
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
             </div>
 
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Mortalitas (Ekor)</label>
-              <input type="number" placeholder="0" value={mortality || ''} onChange={e => setMortality(Number(e.target.value))}
-                className="w-full bg-slate-50 border border-rose-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-rose-400 text-rose-600" />
-            </div>
-
-            {/* FIX #4: Mortality Cause — shows only when mortality > 0 */}
-            {mortality > 0 && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="overflow-hidden">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-rose-400 block mb-2 flex items-center gap-1">
-                  <AlertTriangle size={10} /> Penyebab Kematian
-                </label>
-                <select
-                  value={mortalityCause}
-                  onChange={e => setMortalityCause(e.target.value as MortalityCause)}
-                  className="w-full bg-rose-50 border border-rose-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-rose-400 text-rose-700"
-                >
-                  {Object.values(MortalityCause).map(cause => (
-                    <option key={cause} value={cause}>{MORTALITY_CAUSE_LABELS[cause]}</option>
-                  ))}
-                </select>
-              </motion.div>
-            )}
+            {/* Mortalitas field removed from UI per requirement — still tracked internally */}
 
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Telur Afkir/Dibuang</label>

@@ -362,8 +362,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const journalId = addJournalEntry(
       { date: expense.date, description: expense.description, reference: `OPS-${Date.now()}` },
       [
-        { accountId: expense.accountId, debit: expense.amount, credit: 0 },
-        { accountId: expense.paymentAccountId, debit: 0, credit: expense.amount },
+        { accountId: expense.accountId, debit: expense.amount, credit: 0, houseId: expense.houseId },
+        { accountId: expense.paymentAccountId, debit: 0, credit: expense.amount, houseId: expense.houseId },
       ]
     );
     const newExpense: OperationalExpense = { ...expense, id: `opex-${Date.now()}`, journalId };
@@ -383,12 +383,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Realize sinking fund allocation — moves retained earnings to reserve fund
-  const realizeSinkingFund = (amount: number, type: SinkingFundType, notes?: string) => {
+  const realizeSinkingFund = (amount: number, type: SinkingFundType, houseId?: string, notes?: string) => {
     const journalId = addJournalEntry(
       { date: new Date().toISOString().split('T')[0], description: `Penyisihan Sinking Fund: ${type}`, reference: `SF-${Date.now()}` },
       [
-        { accountId: 'acc-modal', debit: amount, credit: 0 },
-        { accountId: 'acc-sinking-fund', debit: 0, credit: amount },
+        { accountId: 'acc-modal', debit: amount, credit: 0, houseId },
+        { accountId: 'acc-sinking-fund', debit: 0, credit: amount, houseId },
       ]
     );
     const allocation: SinkingFundAllocation = {
@@ -403,8 +403,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Compute debit/credit balance for a single account from journal lines
-  const getAccountBalance = (accountId: string) => {
-    const lines = journalLines.filter(l => l.accountId === accountId);
+  const getAccountBalance = (accountId: string, houseId?: string) => {
+    const lines = journalLines.filter(l => l.accountId === accountId && (!houseId || l.houseId === houseId));
     const debit = lines.reduce((s, l) => s + l.debit, 0);
     const credit = lines.reduce((s, l) => s + l.credit, 0);
     const acc = accounts.find(a => a.id === accountId);
@@ -415,9 +415,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Trial balance: aggregate all accounts
-  const getTrialBalance = () => {
+  const getTrialBalance = (houseId?: string) => {
     return accounts.map(acc => {
-      const { debit, credit } = getAccountBalance(acc.id);
+      const { debit, credit } = getAccountBalance(acc.id, houseId);
       return { accountId: acc.id, name: acc.name, code: acc.code, category: acc.category, debit, credit };
     }).filter(row => row.debit > 0 || row.credit > 0);
   };
@@ -426,8 +426,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const journalId = addJournalEntry(
       { date: tx.date, description: tx.description, reference: `TRX-OPS-${Date.now()}` },
       [
-        { accountId, debit: tx.total, credit: 0 },
-        { accountId: paymentAccountId, debit: 0, credit: tx.total }
+        { accountId, debit: tx.total, credit: 0, houseId: tx.houseId },
+        { accountId: paymentAccountId, debit: 0, credit: tx.total, houseId: tx.houseId }
       ]
     );
     addTransaction({ ...tx, type: 'EXPENSE', journalId, paymentStatus: PaymentStatus.LUNAS });
@@ -495,7 +495,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           paymentHistory: []
         });
 
-        // 3. Catat Biaya Operasional (Pakan) untuk Kandang
+        // 3. Catat Biaya Operasional (Pakan) untuk Kandang (Debit Beban Pakan, Credit Persediaan)
+        const journalId = addJournalEntry(
+          { date: logData.date, description: `Pemakaian Pakan Produksi: Kandang ${logData.houseId}`, reference: `PROD-FEED-${newLog.id}` },
+          [
+            { accountId: 'acc-beban-pakan', debit: totalCost, credit: 0, houseId: logData.houseId },
+            { accountId: 'acc-persediaan', debit: 0, credit: totalCost, houseId: logData.houseId }
+          ]
+        );
+
         addTransaction({
           houseId: logData.houseId,
           date: logData.date,
@@ -503,9 +511,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           qty: `${logData.feedConsumed} ${item.unit}`,
           price: item.lastPrice,
           total: totalCost,
-          account: 'Hutang Internal',
+          account: 'Persediaan',
           type: 'EXPENSE',
           category: 'Pakan',
+          journalId
         });
       }
     }
@@ -608,8 +617,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       setJournalLines(prev => [
         ...prev,
-        { id: `jl-${Date.now()}-1`, journalId, accountId: selectedAcc.id, debit: saleData.total, credit: 0 },
-        { id: `jl-${Date.now()}-2`, journalId, accountId: 'acc-penjualan', debit: 0, credit: saleData.total }
+        { id: `jl-${Date.now()}-1`, journalId, accountId: selectedAcc.id, debit: saleData.total, credit: 0, houseId: saleData.houseId },
+        { id: `jl-${Date.now()}-2`, journalId, accountId: 'acc-penjualan', debit: 0, credit: saleData.total, houseId: saleData.houseId }
       ]);
     }
   };
@@ -690,8 +699,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       reference: `MODAL-${Date.now()}`,
       description: `Suntikan Modal: ${description}`,
     }, [
-      { accountId: targetAccount.id, debit: amount, credit: 0 },
-      { accountId: 'acc-modal', debit: 0, credit: amount }
+      { accountId: targetAccount.id, debit: amount, credit: 0, houseId },
+      { accountId: 'acc-modal', debit: 0, credit: amount, houseId }
     ]);
 
     addTransaction({

@@ -255,13 +255,6 @@ export default function Inventory() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
-            onClick={() => setIsTransferModalOpen(true)}
-            className="flex items-center space-x-2 bg-amber-500 text-white px-4 py-2 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-amber-600 transition-colors shadow-sm"
-          >
-            <ArrowRightLeft size={16} />
-            <span>Mutasi ke Kandang</span>
-          </button>
-          <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center space-x-2 bg-slate-900 text-white px-4 py-2 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-slate-800 transition-colors shadow-sm"
           >

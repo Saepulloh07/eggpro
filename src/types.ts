@@ -66,6 +66,7 @@ export interface JournalLine {
   accountId: string;
   debit: number;
   credit: number;
+  houseId?: string;
 }
 
 // WAREHOUSE TYPES

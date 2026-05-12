@@ -73,7 +73,9 @@ function AppContent() {
         const workers = house.workerCount || 0;
         if (workers > 0) {
           const deductionAmount = workers * allowancePerWorker;
-          const eggStocks = inventory.filter(i => i.houseId === house.id && i.type === 'EGG_STOCK' && i.quantity > 0);
+          const eggStocks = inventory
+            .filter(i => i.houseId === house.id && i.type === 'EGG_STOCK' && i.quantity > 0)
+            .sort((a, b) => b.quantity - a.quantity); // Deduct from highest stock first
           
           let remainingToDeduct = deductionAmount;
           for (const stock of eggStocks) {

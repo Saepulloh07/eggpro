@@ -103,6 +103,7 @@ export default function Settings() {
     lowHDPAlertThreshold: farmSettings.lowHDPAlertThreshold,
     stdFeedIntake: farmSettings.stdFeedIntake,
     wasteFreePercentage: farmSettings.wasteFreePercentage,
+    workerEggAllowancePerDay: farmSettings.workerEggAllowancePerDay ?? 5,
   });
   const [targetSaved, setTargetSaved] = React.useState(false);
 
@@ -772,6 +773,23 @@ export default function Settings() {
                                             />
                                             <div className="flex justify-between text-[8px] text-slate-400 font-bold">
                                                 <span>0%</span><span>5%</span><span>10%</span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-50 border border-slate-100 p-4 space-y-1">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-700">Ambang Batas Telur Karyawan (butir/hari)</label>
+                                                <span className="text-[9px] text-emerald-600 font-black">{targetForm.workerEggAllowancePerDay} butir</span>
+                                            </div>
+                                            <p className="text-[9px] text-slate-400 mb-2">Jumlah telur yang otomatis dikurangi dari stok gudang per hari sebagai jatah karyawan. Sistem akan memotong dari stok yang ada secara otomatis. Default: 5 butir/hari.</p>
+                                            <input
+                                                type="range"
+                                                min={0} max={20} step={1}
+                                                value={targetForm.workerEggAllowancePerDay}
+                                                onChange={(e) => setTargetForm(prev => ({ ...prev, workerEggAllowancePerDay: Number(e.target.value) }))}
+                                                className="w-full accent-emerald-500"
+                                            />
+                                            <div className="flex justify-between text-[8px] text-slate-400 font-bold">
+                                                <span>0 butir</span><span>10 butir</span><span>20 butir</span>
                                             </div>
                                         </div>
                                     </div>
