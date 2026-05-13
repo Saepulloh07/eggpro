@@ -1,0 +1,200 @@
+Struktur Data (Data Models) - Poultry Management System
+======================================================
+
+1. User (Pengguna)
+------------------
+- id: string
+- name: string
+- username: string
+- role: enum (SUPER_ADMIN, ADMIN, WORKER)
+- email: string
+- password: string (Hashed di production)
+- assignedHouses: string[] (ID kandang untuk WORKER)
+- salary: number (Gaji)
+
+2. PoultryHouse (Kandang)
+-------------------------
+- id: string
+- name: string
+- location: string
+- capacity: number
+- area: number (Luas m2)
+- description: string
+- managerId: string (ID penanggungjawab)
+- purchaseDate: string (Untuk penyusutan)
+- purchasePrice: number (Untuk penyusutan)
+- workerCount: number
+
+3. FlockBatch (Siklus/Populasi)
+-------------------------------
+- id: string
+- houseId: string
+- strain: string
+- arrivalDate: string
+- arrivalAgeWeeks: number
+- initialCount: number
+- currentCount: number
+- isActive: boolean
+- targetHDP: number
+- initialCapital: number
+- docPrice: number
+- notes: string
+
+4. PopulationMutation (Mutasi Populasi)
+---------------------------------------
+- id: string
+- houseId: string
+- targetHouseId: string (Opsional untuk transfer)
+- date: string
+- type: enum (ARRIVAL, TRANSFER, MORTALITY, CULLING)
+- count: number
+- pricePerBird: number
+- totalPrice: number
+- notes: string
+- transactionId: string (ID transaksi terkait)
+
+5. DailyProduction (Produksi Harian) / ProductionLog
+----------------------------------------------------
+- id: string
+- houseId: string
+- date: string
+- eggCount: number
+- feedConsumed: number (Konsumsi pakan dalam kg)
+- feedInventoryItemId: string (Item pakan yang dipakai)
+- mortality: number
+- mortalityCause: enum (DISEASE, CULLED, OTHER)
+- discardedEggs: number
+- breakdown: Record<string, number> (Rincian per kategori telur)
+- totalButir: number
+- workerId / inputBy: string
+
+6. InventoryItem (Barang Persediaan)
+------------------------------------
+- id: string
+- houseId: string (Opsional, jika CENTRAL berarti Gudang Pusat)
+- name: string
+- type: enum (RAW_MATERIAL, FINISHED_FEED, EGG_STOCK, MEDICINE, VACCINE, NON_CORE, OTHER)
+- quantity: number
+- unit: string
+- reorderPoint: number
+- lastPrice: number (Metode Average Cost)
+- eggCategory: enum (BM, KRC, KRC_RETAK, KS, KS_RETAK, PELOR, RETAK, PECAH)
+
+7. StockMutation (Mutasi Stok)
+------------------------------
+- id: string
+- date: string
+- itemId: string
+- type: enum (PURCHASE, USAGE, TRANSFER, ADJUSTMENT, PRODUCTION, SALE, RETURN)
+- quantity: number
+- unitCost: number
+- totalCost: number
+- sourceLocation: string ('CENTRAL' atau houseId)
+- targetLocation: string (Opsional)
+- paidByHouseId: string
+- usedByHouseId: string
+- reference: string
+- notes: string
+
+8. Account (Akun Akuntansi / COA)
+---------------------------------
+- id: string
+- code: string
+- name: string
+- category: enum (ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE)
+- normalBalance: enum (DEBIT, CREDIT)
+- isCashOrBank: boolean
+- parentId: string
+- isSystem: boolean
+
+9. JournalEntry & JournalLine (Jurnal Akuntansi)
+------------------------------------------------
+JournalEntry:
+- id: string
+- date: string
+- reference: string
+- description: string
+
+JournalLine:
+- id: string
+- journalId: string
+- accountId: string
+- debit: number
+- credit: number
+- houseId: string (Cost center)
+
+10. FinancialTransaction (Transaksi Keuangan Kas)
+-------------------------------------------------
+- id: string
+- houseId: string
+- date: string
+- description: string
+- qty: string
+- price: number
+- total: number
+- account: string
+- type: enum (INCOME, EXPENSE, MODAL, ASSET, INTERNAL_TRANSFER)
+- category: string
+- journalId: string
+- paymentStatus: enum (LUNAS, HUTANG, PIUTANG)
+
+11. APARRecord (Hutang Piutang)
+-------------------------------
+- id: string
+- type: enum (HUTANG, PIUTANG)
+- entityName: string
+- description: string
+- amount: number
+- remainingAmount: number
+- dueDate: string
+- createdAt: string
+- status: enum (OPEN, PARTIAL, CLOSED)
+- relatedTransactionId: string
+- paymentHistory: Array of { id, date, amount, accountId, notes }
+
+12. SalesLog / Sale (Penjualan)
+-------------------------------
+- id: string
+- houseId: string
+- date: string
+- category: string
+- quantity: number
+- price: number / pricePerUnit
+- total: number / totalPrice
+- isFree: boolean
+- customer / buyerName: string
+
+13. Asset (Aset Tetap & Penyusutan)
+-----------------------------------
+- id: string
+- houseId: string
+- name: string
+- category: enum (ALAT PRODUKSI, KENDARAAN, BANGUNAN, LAINNYA)
+- purchaseDate: string
+- purchasePrice: number
+- expectedLifeYears: number
+- salvageValue: number
+- condition: enum (BAIK, SERVIS, RUSAK)
+- maintenanceHistory: Array of { date, status, user, notes }
+
+14. FarmSettings (Pengaturan Global & Thresholds)
+-------------------------------------------------
+- globalTargetHDP: number
+- mortalityAlertThreshold: number
+- lowHDPAlertThreshold: number
+- targetFCR: number
+- stdFeedIntake: number
+- strains: string[]
+- units: string[]
+- wasteFreePercentage: number
+- masterPrices: Array of { id, name, price }
+- suppliers: Array of Supplier
+- initialCapital: number
+- cageValueTotal, cageLifeYears, cageSalvageValue
+- equipmentValueTotal, equipmentLifeYears, equipmentSalvageValue
+- layerValueTotal, layerLifeYears, layerSalvageValue
+- workerEggAllowancePerDay: number
+- abnormalEggTolerancePct: number
+- sinkingFundDocPct: number
+- sinkingFundHousePct: number
+- sinkingFundReservePct: number

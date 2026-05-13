@@ -17,6 +17,7 @@ import {
   StockMutationType,
   type StockMutation,
   type APARRecord,
+  type BiosecurityRecord,
   type OperationalExpense,
   type SinkingFundAllocation,
   SinkingFundType,
@@ -71,63 +72,7 @@ export interface FinancialTransaction {
 // Re-export InventoryItem so consumers can import from GlobalContext
 export type { InventoryItem };
 
-const DEFAULT_ACCOUNTS: Account[] = [
-  { id: 'acc-kas', code: '111', name: 'Kas Tunai', category: AccountCategory.ASSET, isCashOrBank: true },
-  { id: 'acc-bca', code: '112', name: 'Bank BCA', category: AccountCategory.ASSET, isCashOrBank: true },
-  { id: 'acc-mandiri', code: '113', name: 'Bank Mandiri', category: AccountCategory.ASSET, isCashOrBank: true },
-  { id: 'acc-piutang', code: '114', name: 'Piutang Usaha', category: AccountCategory.ASSET },
-  { id: 'acc-persediaan', code: '115', name: 'Persediaan Gudang', category: AccountCategory.ASSET },
-  { id: 'acc-hutang', code: '211', name: 'Hutang Usaha', category: AccountCategory.LIABILITY },
-  { id: 'acc-modal', code: '311', name: 'Modal Pemilik', category: AccountCategory.EQUITY },
-  { id: 'acc-penjualan', code: '411', name: 'Pendapatan Penjualan', category: AccountCategory.REVENUE },
-  { id: 'acc-pendapatan-lain', code: '412', name: 'Pendapatan Lain-lain', category: AccountCategory.REVENUE },
-  { id: 'acc-beban-pakan', code: '511', name: 'Beban Pakan', category: AccountCategory.EXPENSE },
-  { id: 'acc-beban-gaji', code: '512', name: 'Beban Gaji', category: AccountCategory.EXPENSE },
-  { id: 'acc-beban-listrik', code: '513', name: 'Beban Listrik', category: AccountCategory.EXPENSE },
-  { id: 'acc-beban-ops', code: '514', name: 'Beban Operasional Lainnya', category: AccountCategory.EXPENSE },
-  { id: 'acc-sinking-fund', code: '312', name: 'Dana Cadangan (Sinking Fund)', category: AccountCategory.EQUITY },
-  { id: 'acc-akum-penyusutan', code: '116', name: 'Akumulasi Penyusutan', category: AccountCategory.ASSET }, // Contra asset
-  { id: 'acc-beban-penyusutan', code: '515', name: 'Beban Penyusutan', category: AccountCategory.EXPENSE },
-];
-
-// ─── Default Inventory Data ───────────────────────────────────────────────────
-
-const DEFAULT_INVENTORY: InventoryItem[] = [
-  // Raw Materials
-  { id: 'inv-rm-1', name: 'Jagung Giling',        type: ItemType.RAW_MATERIAL,  quantity: 1500, unit: 'kg', reorderPoint: 200, lastPrice: 4500 },
-  { id: 'inv-rm-2', name: 'Bekatul (Dedak)',       type: ItemType.RAW_MATERIAL,  quantity: 800,  unit: 'kg', reorderPoint: 150, lastPrice: 2800 },
-  { id: 'inv-rm-3', name: 'Konsentrat Layer',      type: ItemType.RAW_MATERIAL,  quantity: 600,  unit: 'kg', reorderPoint: 250, lastPrice: 12000 },
-  { id: 'inv-rm-4', name: 'Bungkil Kedelai (SBM)', type: ItemType.RAW_MATERIAL,  quantity: 400,  unit: 'kg', reorderPoint: 100, lastPrice: 9000 },
-  // Finished Feed
-  { id: 'inv-ff-1', name: 'Pakan Jadi Layer Mix',  type: ItemType.FINISHED_FEED, quantity: 0,    unit: 'kg', reorderPoint: 500, lastPrice: 0 },
-  // Egg Stock — one per category
-  { id: 'inv-egg-BM',       name: 'Stok Telur Remban',    type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.BM },
-  { id: 'inv-egg-KRC',      name: 'Stok Telur Bujang',    type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.KRC },
-  { id: 'inv-egg-KS',       name: 'Stok Telur KS',        type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.KS },
-  { id: 'inv-egg-PELOR',    name: 'Stok Telur Pelor',     type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.PELOR },
-  { id: 'inv-egg-RETAK',    name: 'Stok Telur Retak',     type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.RETAK },
-  { id: 'inv-egg-PECAH',    name: 'Stok Telur Pecah',     type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.PECAH },
-  { id: 'inv-egg-KRC_RETAK',name: 'Stok Telur Bujang Retak', type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.KRC_RETAK },
-  { id: 'inv-egg-KS_RETAK', name: 'Stok Telur KS Retak',  type: ItemType.EGG_STOCK, quantity: 0, unit: 'butir', reorderPoint: 0, lastPrice: 0, eggCategory: EggCategory.KS_RETAK },
-  // Medicine
-  { id: 'inv-med-1', name: 'Vitamin C',           type: ItemType.MEDICINE, quantity: 10,  unit: 'botol', reorderPoint: 2, lastPrice: 25000 },
-  { id: 'inv-med-2', name: 'Vaksin Newcastle',    type: ItemType.VACCINE,  quantity: 5,   unit: 'vial',  reorderPoint: 1, lastPrice: 75000 },
-];
-
-const DEFAULT_RECIPES = [
-  {
-    id: 'rcp-1',
-    name: 'Ransum Layer Umur 30–50 Minggu',
-    targetFcr: 2.10,
-    outputInventoryItemId: 'inv-ff-1',
-    ingredients: [
-      { inventoryItemId: 'inv-rm-1', percentage: 50 },
-      { inventoryItemId: 'inv-rm-2', percentage: 18 },
-      { inventoryItemId: 'inv-rm-3', percentage: 30 },
-      { inventoryItemId: 'inv-rm-4', percentage: 2 },
-    ],
-  },
-];
+import { syncToDb, loadFromDbOrIndexedDB } from './syncUtils';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 
@@ -144,10 +89,15 @@ interface GlobalContextType {
   journalLines: JournalLine[];
   stockMutations: StockMutation[];
   apArRecords: APARRecord[];
+  biosecurityRecords: BiosecurityRecord[];
   operationalExpenses: OperationalExpense[];
   sinkingFundAllocations: SinkingFundAllocation[];
 
   // Actions
+  addBiosecurityRecord: (record: Omit<BiosecurityRecord, 'id'>) => void;
+  addBiosecurityRecordsBulk: (records: Omit<BiosecurityRecord, 'id'>[]) => void;
+  updateBiosecurityRecord: (id: string, updates: Partial<BiosecurityRecord>) => void;
+  deleteBiosecurityRecord: (id: string) => void;
   saveProduction: (log: Omit<ProductionLog, 'id'>) => void;
   saveSale: (sale: Omit<SalesLog, 'id'>, targetAccountId?: string) => void;
   addTransaction: (tx: Omit<FinancialTransaction, 'id'>) => string;
@@ -182,6 +132,8 @@ interface GlobalContextType {
   addAccount: (account: Omit<Account, 'id'>) => void;
   updateAccount: (id: string, account: Partial<Account>) => void;
   deleteAccount: (id: string) => void;
+  getHouseCashBalance: (houseId: string) => number;
+  createInterHouseDebt: (fromHouseId: string, toHouseId: string, amount: number, description: string) => void;
 }
 
 const GlobalContext = createContext<GlobalContextType | undefined>(undefined);
@@ -189,115 +141,69 @@ const GlobalContext = createContext<GlobalContextType | undefined>(undefined);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [productionLogs, setProductionLogs] = useState<ProductionLog[]>(() => {
-    const s = localStorage.getItem('poultry_prod_logs');
-    let loaded = s ? JSON.parse(s) : [];
-    loaded = loaded.map((log: any) => {
-       if (!log.breakdown) return log;
-       const newBreakdown = { ...log.breakdown };
-       if (newBreakdown['BM'] !== undefined) { newBreakdown['Remban'] = newBreakdown['BM']; delete newBreakdown['BM']; }
-       if (newBreakdown['KRC'] !== undefined) { newBreakdown['Bujang'] = newBreakdown['KRC']; delete newBreakdown['KRC']; }
-       if (newBreakdown['KRC Retak'] !== undefined) { newBreakdown['Bujang Retak'] = newBreakdown['KRC Retak']; delete newBreakdown['KRC Retak']; }
-       if (newBreakdown['PELOR'] !== undefined) { newBreakdown['Pelor'] = newBreakdown['PELOR']; delete newBreakdown['PELOR']; }
-       if (newBreakdown['RETAK'] !== undefined) { newBreakdown['Retak'] = newBreakdown['RETAK']; delete newBreakdown['RETAK']; }
-       if (newBreakdown['PECAH'] !== undefined) { newBreakdown['Pecah'] = newBreakdown['PECAH']; delete newBreakdown['PECAH']; }
-       return { ...log, breakdown: newBreakdown };
-    });
-    return loaded;
-  });
-  const [salesLogs, setSalesLogs] = useState<SalesLog[]>(() => {
-    const s = localStorage.getItem('poultry_sales_logs');
-    return s ? JSON.parse(s) : [];
-  });
-  const [transactions, setTransactions] = useState<FinancialTransaction[]>(() => {
-    const s = localStorage.getItem('poultry_transactions');
-    return s ? JSON.parse(s) : [
-      { id: 'tx-init-1', date: '2026-03-01', description: 'Modal Awal', qty: '1', price: 250000000, total: 250000000, account: 'Mandiri', type: 'MODAL' },
-    ];
-  });
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
-    const s = localStorage.getItem('poultry_inventory_v2');
-    let loaded = s ? JSON.parse(s) : DEFAULT_INVENTORY;
-    loaded = loaded.map((item: any) => {
-       if (item.eggCategory === 'BM') return { ...item, eggCategory: 'Remban', name: item.name.replace('BM', 'Remban') };
-       if (item.eggCategory === 'KRC') return { ...item, eggCategory: 'Bujang', name: item.name.replace('KRC', 'Bujang') };
-       if (item.eggCategory === 'KRC Retak') return { ...item, eggCategory: 'Bujang Retak', name: item.name.replace('KRC', 'Bujang') };
-       if (item.eggCategory === 'PELOR') return { ...item, eggCategory: 'Pelor' };
-       if (item.eggCategory === 'RETAK') return { ...item, eggCategory: 'Retak' };
-       if (item.eggCategory === 'PECAH') return { ...item, eggCategory: 'Pecah' };
-       return item;
-    });
-    return loaded;
-  });
-  const [mortalityRecords, setMortalityRecords] = useState<MortalityRecord[]>(() => {
-    const s = localStorage.getItem('poultry_mortality');
-    return s ? JSON.parse(s) : [];
-  });
-  const [recipes, setRecipes] = useState<any[]>(() => {
-    const s = localStorage.getItem('poultry_recipes');
-    return s ? JSON.parse(s) : DEFAULT_RECIPES;
-  });
-  const [farmSettings, setFarmSettings] = useState<FarmSettings>(() => {
-    const s = localStorage.getItem('poultry_farm_settings');
-    return s ? { ...DEFAULT_FARM_SETTINGS, ...JSON.parse(s) } : DEFAULT_FARM_SETTINGS;
-  });
-  const [assets, setAssets] = useState<Asset[]>(() => {
-    const s = localStorage.getItem('poultry_assets');
-    return s ? JSON.parse(s) : [
-      { id: 'ast-1', name: 'Mesin Giling Pakan', category: 'ALAT PRODUKSI', purchaseDate: '2025-01-10', purchasePrice: 12000000, expectedLifeYears: 5, condition: AssetCondition.BAIK, maintenanceHistory: [] },
-      { id: 'ast-2', name: 'Bentor Pengangkut', category: 'KENDARAAN', purchaseDate: '2024-06-15', purchasePrice: 24500000, expectedLifeYears: 4, condition: AssetCondition.SERVIS, maintenanceHistory: [] },
-      { id: 'ast-3', name: 'Timbangan Digital', category: 'ALAT PRODUKSI', purchaseDate: '2026-02-20', purchasePrice: 850000, expectedLifeYears: 2, condition: AssetCondition.BAIK, maintenanceHistory: [] },
-      { id: 'ast-4', name: 'Pompa Air Jetpump', category: 'LAINNYA', purchaseDate: '2025-11-05', purchasePrice: 3200000, expectedLifeYears: 3, condition: AssetCondition.BAIK, maintenanceHistory: [] },
-    ];
-  });
-  
-  // Accounting and New Models
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    const s = localStorage.getItem('poultry_accounts');
-    return s ? JSON.parse(s) : DEFAULT_ACCOUNTS;
-  });
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(() => {
-    const s = localStorage.getItem('poultry_journals');
-    return s ? JSON.parse(s) : [];
-  });
-  const [journalLines, setJournalLines] = useState<JournalLine[]>(() => {
-    const s = localStorage.getItem('poultry_journal_lines');
-    return s ? JSON.parse(s) : [];
-  });
-  const [stockMutations, setStockMutations] = useState<StockMutation[]>(() => {
-    const s = localStorage.getItem('poultry_stock_mutations');
-    return s ? JSON.parse(s) : [];
-  });
-  const [apArRecords, setApArRecords] = useState<APARRecord[]>(() => {
-    const s = localStorage.getItem('poultry_apar');
-    const loaded = s ? JSON.parse(s) : [];
-    // Migration: ensure paymentHistory exists
-    return loaded.map((r: any) => ({ paymentHistory: [], ...r }));
-  });
-  const [operationalExpenses, setOperationalExpenses] = useState<OperationalExpense[]>(() => {
-    const s = localStorage.getItem('poultry_op_expenses');
-    return s ? JSON.parse(s) : [];
-  });
-  const [sinkingFundAllocations, setSinkingFundAllocations] = useState<SinkingFundAllocation[]>(() => {
-    const s = localStorage.getItem('poultry_sinking_fund');
-    return s ? JSON.parse(s) : [];
-  });
+  const [productionLogs, setProductionLogs] = useState<ProductionLog[]>([]);
+  const [salesLogs, setSalesLogs] = useState<SalesLog[]>([]);
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [mortalityRecords, setMortalityRecords] = useState<MortalityRecord[]>([]);
+  const [recipes, setRecipes] = useState<any[]>([]);
+  const [farmSettings, setFarmSettings] = useState<FarmSettings>(DEFAULT_FARM_SETTINGS);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [journalLines, setJournalLines] = useState<JournalLine[]>([]);
+  const [stockMutations, setStockMutations] = useState<StockMutation[]>([]);
+  const [apArRecords, setApArRecords] = useState<APARRecord[]>([]);
+  const [operationalExpenses, setOperationalExpenses] = useState<OperationalExpense[]>([]);
+  const [sinkingFundAllocations, setSinkingFundAllocations] = useState<SinkingFundAllocation[]>([]);
+  const [biosecurityRecords, setBiosecurityRecords] = useState<BiosecurityRecord[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  useEffect(() => { localStorage.setItem('poultry_prod_logs', JSON.stringify(productionLogs)); }, [productionLogs]);
-  useEffect(() => { localStorage.setItem('poultry_sales_logs', JSON.stringify(salesLogs)); }, [salesLogs]);
-  useEffect(() => { localStorage.setItem('poultry_transactions', JSON.stringify(transactions)); }, [transactions]);
-  useEffect(() => { localStorage.setItem('poultry_inventory_v2', JSON.stringify(inventory)); }, [inventory]);
-  useEffect(() => { localStorage.setItem('poultry_mortality', JSON.stringify(mortalityRecords)); }, [mortalityRecords]);
-  useEffect(() => { localStorage.setItem('poultry_recipes', JSON.stringify(recipes)); }, [recipes]);
-  useEffect(() => { localStorage.setItem('poultry_farm_settings', JSON.stringify(farmSettings)); }, [farmSettings]);
-  useEffect(() => { localStorage.setItem('poultry_assets', JSON.stringify(assets)); }, [assets]);
-  useEffect(() => { localStorage.setItem('poultry_accounts', JSON.stringify(accounts)); }, [accounts]);
-  useEffect(() => { localStorage.setItem('poultry_journals', JSON.stringify(journalEntries)); }, [journalEntries]);
-  useEffect(() => { localStorage.setItem('poultry_journal_lines', JSON.stringify(journalLines)); }, [journalLines]);
-  useEffect(() => { localStorage.setItem('poultry_stock_mutations', JSON.stringify(stockMutations)); }, [stockMutations]);
-  useEffect(() => { localStorage.setItem('poultry_apar', JSON.stringify(apArRecords)); }, [apArRecords]);
-  useEffect(() => { localStorage.setItem('poultry_op_expenses', JSON.stringify(operationalExpenses)); }, [operationalExpenses]);
-  useEffect(() => { localStorage.setItem('poultry_sinking_fund', JSON.stringify(sinkingFundAllocations)); }, [sinkingFundAllocations]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_prod_logs', productionLogs); }, [productionLogs, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_sales_logs', salesLogs); }, [salesLogs, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_transactions', transactions); }, [transactions, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_inventory_v2', inventory); }, [inventory, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_mortality', mortalityRecords); }, [mortalityRecords, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_recipes', recipes); }, [recipes, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_farm_settings', farmSettings); }, [farmSettings, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_assets', assets); }, [assets, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_accounts', accounts); }, [accounts, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_journals', journalEntries); }, [journalEntries, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_journal_lines', journalLines); }, [journalLines, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_stock_mutations', stockMutations); }, [stockMutations, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_apar', apArRecords); }, [apArRecords, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_op_expenses', operationalExpenses); }, [operationalExpenses, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_sinking_fund', sinkingFundAllocations); }, [sinkingFundAllocations, isInitialized]);
+  useEffect(() => { if (isInitialized) syncToDb('poultry_biosecurity', biosecurityRecords); }, [biosecurityRecords, isInitialized]);
+
+
+  // Load from DB or IndexedDB on mount
+  useEffect(() => {
+    const init = async () => {
+        await Promise.all([
+            loadFromDbOrIndexedDB('poultry_prod_logs', setProductionLogs),
+            loadFromDbOrIndexedDB('poultry_sales_logs', setSalesLogs),
+            loadFromDbOrIndexedDB('poultry_transactions', setTransactions),
+            loadFromDbOrIndexedDB('poultry_inventory_v2', setInventory),
+            loadFromDbOrIndexedDB('poultry_mortality', setMortalityRecords),
+            loadFromDbOrIndexedDB('poultry_recipes', setRecipes),
+            loadFromDbOrIndexedDB('poultry_farm_settings', (data) => setFarmSettings({...DEFAULT_FARM_SETTINGS, ...data})),
+            loadFromDbOrIndexedDB('poultry_assets', setAssets),
+            loadFromDbOrIndexedDB('poultry_accounts', setAccounts),
+            loadFromDbOrIndexedDB('poultry_journals', setJournalEntries),
+            loadFromDbOrIndexedDB('poultry_journal_lines', setJournalLines),
+            loadFromDbOrIndexedDB('poultry_stock_mutations', setStockMutations),
+            loadFromDbOrIndexedDB('poultry_apar', setApArRecords),
+            loadFromDbOrIndexedDB('poultry_op_expenses', setOperationalExpenses),
+            loadFromDbOrIndexedDB('poultry_sinking_fund', setSinkingFundAllocations),
+            loadFromDbOrIndexedDB('poultry_biosecurity', setBiosecurityRecords),
+        ]);
+        setIsInitialized(true);
+    };
+    init();
+  }, []);
+
+
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
@@ -435,7 +341,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addTransaction = (txData: Omit<FinancialTransaction, 'id'>): string => {
     const id = `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    setTransactions(prev => [...prev, { ...txData, id }]);
+    const newTx = { ...txData, id };
+    setTransactions(prev => [...prev, newTx]);
+    
+    // Sync to backend asynchronously
+    fetch('/api/finance/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTx)
+    }).catch(err => console.error("Failed to sync transaction:", err));
+    
     return id;
   };
 
@@ -452,6 +367,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const saveProduction = (logData: Omit<ProductionLog, 'id'>) => {
     const newLog = { ...logData, id: `prod-${Date.now()}` };
     setProductionLogs(prev => [...prev, newLog]);
+    
+    // Sync to backend
+    fetch('/api/production', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newLog)
+    }).catch(err => console.error("Failed to sync production:", err));
 
     // FIX #1: Deduct the selected feed inventory item
     if (logData.feedInventoryItemId && logData.feedConsumed > 0) {
@@ -589,7 +511,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return item;
     }));
 
-    const selectedAcc = accounts.find(a => a.id === targetAccountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
+    // Use house-specific kas account, fallback to any cash account
+    const selectedAcc = accounts.find(a => a.id === targetAccountId)
+      || accounts.find(a => a.isCashOrBank && a.id === `acc-kas-${saleData.houseId}`)
+      || accounts.find(a => a.isCashOrBank)
+      || accounts[0];
+
 
     const txId = addTransaction({
       houseId: saleData.houseId,
@@ -618,7 +545,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setJournalLines(prev => [
         ...prev,
         { id: `jl-${Date.now()}-1`, journalId, accountId: selectedAcc.id, debit: saleData.total, credit: 0, houseId: saleData.houseId },
-        { id: `jl-${Date.now()}-2`, journalId, accountId: 'acc-penjualan', debit: 0, credit: saleData.total, houseId: saleData.houseId }
+        { id: `jl-${Date.now()}-2`, journalId, accountId: 'acc-penjualan-telur', debit: 0, credit: saleData.total, houseId: saleData.houseId }
       ]);
     }
   };
@@ -689,11 +616,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setFarmSettings(prev => ({ ...prev, ...settings }));
   };
 
-  const addModalAwal = (amount: number, description = 'Modal Awal', houseId?: string, targetAccountId: string = 'acc-kas') => {
+  const addModalAwal = (amount: number, description = 'Modal Awal', houseId?: string, targetAccountId?: string) => {
     const txId = `tx-${Date.now()}`;
-    const targetAccount = accounts.find(a => a.id === targetAccountId) || accounts[0];
-    
-    // Create Journal Entry
+    // Prefer house-specific kas account
+    const kasAccountId = targetAccountId
+      || (houseId ? `acc-kas-${houseId}` : null)
+      || accounts.find(a => a.isCashOrBank)?.id
+      || 'acc-bank-bca';
+    const targetAccount = accounts.find(a => a.id === kasAccountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
+
     const journalId = addJournalEntry({
       date: new Date().toISOString().split('T')[0],
       reference: `MODAL-${Date.now()}`,
@@ -716,6 +647,77 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
     saveFarmSettings({ initialCapital: farmSettings.initialCapital + amount });
   };
+
+  /**
+   * Hitung saldo kas untuk kandang tertentu.
+   * Menjumlahkan semua debit-kredit pada akun Kas Kandang [houseId].
+   */
+  const getHouseCashBalance = (houseId: string): number => {
+    const kasAccountId = `acc-kas-${houseId}`;
+    const debit = journalLines
+      .filter(l => l.accountId === kasAccountId)
+      .reduce((sum, l) => sum + (l.debit || 0), 0);
+    const credit = journalLines
+      .filter(l => l.accountId === kasAccountId)
+      .reduce((sum, l) => sum + (l.credit || 0), 0);
+    return debit - credit;
+  };
+
+  /**
+   * Catat utang-piutang antar kandang.
+   * fromHouseId = kandang yang "meminjam" (berhutang)
+   * toHouseId   = kandang yang "menanggung" (berpiutang)
+   */
+  const createInterHouseDebt = (
+    fromHouseId: string,
+    toHouseId: string,
+    amount: number,
+    description: string
+  ) => {
+    const today = new Date().toISOString().split('T')[0];
+    const baseId = `iht-${Date.now()}`;
+
+    // Kandang fromHouse: HUTANG (liability increases)
+    addAPARRecord({
+      type: 'HUTANG',
+      entityName: `Kandang — Internal Transfer`,
+      description: `[Hutang Antar Kandang] ${description}`,
+      amount,
+      remainingAmount: amount,
+      dueDate: today,
+      status: 'OPEN',
+      houseId: fromHouseId,
+      isInterHouse: true,
+      fromHouseId,
+      toHouseId,
+    } as any);
+
+    // Kandang toHouse: PIUTANG (asset increases)
+    addAPARRecord({
+      type: 'PIUTANG',
+      entityName: `Kandang — Internal Transfer`,
+      description: `[Piutang Antar Kandang] ${description}`,
+      amount,
+      remainingAmount: amount,
+      dueDate: today,
+      status: 'OPEN',
+      houseId: toHouseId,
+      isInterHouse: true,
+      fromHouseId,
+      toHouseId,
+    } as any);
+
+    // Journal entry: Debit Piutang Antar Kandang (toHouse), Credit Hutang Antar Kandang (fromHouse)
+    addJournalEntry({
+      date: today,
+      reference: baseId,
+      description: `Transfer Internal: ${description}`,
+    }, [
+      { accountId: 'acc-piutang-antar', debit: amount, credit: 0, houseId: toHouseId },
+      { accountId: 'acc-hutang-antar',  debit: 0, credit: amount, houseId: fromHouseId },
+    ]);
+  };
+
 
   const addAccount = (accountData: Omit<Account, 'id'>) => {
     setAccounts(prev => [...prev, { ...accountData, id: `acc-${Date.now()}` }]);
@@ -753,11 +755,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }));
   };
 
+  const addBiosecurityRecord = (data: Omit<BiosecurityRecord, 'id'>) => {
+    setBiosecurityRecords(prev => [...prev, { ...data, id: `vax-${Date.now()}` }]);
+  };
+
+  const addBiosecurityRecordsBulk = (data: Omit<BiosecurityRecord, 'id'>[]) => {
+    const timestamp = Date.now();
+    const newRecords = data.map((d, index) => ({ ...d, id: `vax-${timestamp}-${index}` }));
+    setBiosecurityRecords(prev => [...prev, ...newRecords]);
+  };
+
+
+  const updateBiosecurityRecord = (id: string, updates: Partial<BiosecurityRecord>) => {
+    setBiosecurityRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  };
+
+  const deleteBiosecurityRecord = (id: string) => {
+    setBiosecurityRecords(prev => prev.filter(r => r.id !== id));
+  };
+
   return (
     <GlobalContext.Provider value={{
       productionLogs, salesLogs, transactions, inventory, mortalityRecords, recipes,
-      accounts, journalEntries, journalLines, stockMutations, apArRecords,
+      accounts, journalEntries, journalLines, stockMutations, apArRecords, biosecurityRecords,
       operationalExpenses, sinkingFundAllocations,
+      addBiosecurityRecord, addBiosecurityRecordsBulk, updateBiosecurityRecord, deleteBiosecurityRecord,
       saveProduction, saveSale, addTransaction, updateTransaction, deleteTransaction,
       updateInventory, addInventoryItem, updateInventoryItem, createStockMutation,
       addJournalEntry, addAPARRecord, updateAPARRecord, createOperationalExpense,
@@ -768,6 +790,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       farmSettings, saveFarmSettings, addModalAwal,
       assets, addAsset, updateAsset, updateAssetStatus,
       addAccount, updateAccount, deleteAccount,
+      getHouseCashBalance, createInterHouseDebt,
     }}>
       {children}
     </GlobalContext.Provider>

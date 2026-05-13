@@ -3,39 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import localforage from 'localforage';
+import { syncToDb, loadFromDbOrIndexedDB } from './syncUtils';
 import { User, UserRole } from './types';
-
-// ─── Mock Users for Demo ──────────────────────────────────────────────────────
-export const MOCK_USERS = [
-  {
-    id: 'u1',
-    name: 'Owner Farm',
-    role: UserRole.SUPER_ADMIN,
-    username: 'owner',
-    email: 'owner@farm.com',
-    password: 'owner123',
-    assignedHouses: [],
-  },
-  {
-    id: 'u2',
-    name: 'Admin Gudang',
-    role: UserRole.ADMIN,
-    username: 'admin',
-    email: 'admin@farm.com',
-    password: 'admin123',
-    assignedHouses: ['h1', 'h2'],
-  },
-  {
-    id: 'u3',
-    name: 'Budi (Anak Kandang)',
-    role: UserRole.WORKER,
-    username: 'worker',
-    email: 'worker@farm.com',
-    password: 'worker123',
-    assignedHouses: ['h1'],
-  },
-];
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 interface AppContextType {
@@ -44,6 +15,7 @@ interface AppContextType {
   isLoading: boolean;
   login: (email: string, password: string) => boolean;
   loginAs: (userId: string) => void;
+  setAuthUser: (user: User) => void;
   logout: () => void;
   addUser: (userData: Omit<User, 'id'>) => void;
   updateUser: (id: string, updates: Partial<User>) => void;
@@ -56,41 +28,57 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // ─── Provider ─────────────────────────────────────────────────────────────────
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('poultry_users');
-    if (saved) return JSON.parse(saved);
-    // Initialize with mock data if no saved users
-    return MOCK_USERS.map(u => ({
-      ...u,
-      username: (u as any).username || u.email.split('@')[0],
-      salary: u.role === UserRole.WORKER ? 3500000 : 5000000
-    })) as User[];
-  });
+  const [users, setUsers] = useState<User[]>([]);
+  const [sidebarPermissions, setSidebarPermissions] = useState<Record<UserRole, string[]>>({} as any);
 
-  const [sidebarPermissions, setSidebarPermissions] = useState<Record<UserRole, string[]>>(() => {
-    const saved = localStorage.getItem('poultry_permissions');
-    return saved ? JSON.parse(saved) : {
-      [UserRole.SUPER_ADMIN]: ['dashboard', 'production', 'population', 'feedFormulation', 'vaccine', 'sales', 'inventory', 'finance', 'workers', 'settings'],
-      [UserRole.ADMIN]: ['dashboard', 'production', 'population', 'feedFormulation', 'vaccine', 'sales', 'inventory'],
-      [UserRole.WORKER]: ['production', 'population', 'vaccine'],
-
-    };
-  });
-
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('poultry_session');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading] = useState(false);
 
   // Persistence
-  React.useEffect(() => {
-    localStorage.setItem('poultry_users', JSON.stringify(users));
+  useEffect(() => {
+    if (users.length > 0) syncToDb('poultry_users', users);
   }, [users]);
 
-  React.useEffect(() => {
-    localStorage.setItem('poultry_permissions', JSON.stringify(sidebarPermissions));
+  useEffect(() => {
+    if (Object.keys(sidebarPermissions).length > 0) syncToDb('poultry_permissions', sidebarPermissions);
   }, [sidebarPermissions]);
+
+  useEffect(() => {
+    if (user) {
+      localforage.setItem('poultry_session', user);
+    } else {
+      localforage.removeItem('poultry_session');
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadFromDbOrIndexedDB('poultry_users', setUsers);
+    loadFromDbOrIndexedDB('poultry_permissions', (data) => {
+      // Provide defaults if DB is empty
+      if (!data || Object.keys(data).length === 0) {
+        setSidebarPermissions({
+          [UserRole.SUPER_ADMIN]: ['dashboard', 'production', 'population', 'feedFormulation', 'vaccine', 'sales', 'inventory', 'finance', 'workers', 'settings'],
+          [UserRole.ADMIN]: ['dashboard', 'production', 'population', 'feedFormulation', 'vaccine', 'sales', 'inventory'],
+          [UserRole.WORKER]: ['production', 'population', 'vaccine'],
+        });
+      } else {
+        setSidebarPermissions(data);
+      }
+    });
+
+    localforage.getItem<User>('poultry_session').then(savedUser => {
+      if (savedUser) {
+        setUser(savedUser);
+      } else {
+        // Fallback to localStorage if rememberMe was true
+        const remembered = localStorage.getItem('poultry_remember') === 'true';
+        if (remembered) {
+          const saved = localStorage.getItem('poultry_session');
+          if (saved) setUser(JSON.parse(saved));
+        }
+      }
+    });
+  }, []);
 
   // Migration for new tabs
   React.useEffect(() => {
@@ -117,14 +105,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
 
-  const login = (email: string, password: string): boolean => {
+  const login = (email: string, password: string, rememberMe: boolean = false): boolean => {
     const found = users.find(
       u => u.email.toLowerCase() === email.toLowerCase() && u.password === password
     );
     if (found) {
       const { password: _, ...safeUser } = found;
       setUser(safeUser as User);
-      localStorage.setItem('poultry_session', JSON.stringify(safeUser));
+      if (rememberMe) {
+        localStorage.setItem('poultry_session', JSON.stringify(safeUser));
+        localStorage.setItem('poultry_remember', 'true');
+      } else {
+        localStorage.removeItem('poultry_remember');
+      }
       return true;
     }
     return false;
@@ -135,13 +128,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (found) {
       const { password: _, ...safeUser } = found;
       setUser(safeUser as User);
-      localStorage.setItem('poultry_session', JSON.stringify(safeUser));
     }
+  };
+
+  const setAuthUser = (loggedInUser: User) => {
+    setUser(loggedInUser);
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('poultry_session');
+    localStorage.removeItem('poultry_remember');
   };
 
   const addUser = (userData: Omit<User, 'id'>) => {
@@ -154,7 +151,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (user?.id === id) {
       const updatedUser = { ...user, ...updates };
       setUser(updatedUser);
-      localStorage.setItem('poultry_session', JSON.stringify(updatedUser));
     }
   };
 
@@ -168,10 +164,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ 
-      user, users, isLoading, login, loginAs, logout, 
+    <AppContext.Provider value={{
+      user, users, isLoading, login, loginAs, setAuthUser, logout,
       addUser, updateUser, deleteUser,
-      sidebarPermissions, updatePermissions 
+      sidebarPermissions, updatePermissions
     }}>
       {children}
     </AppContext.Provider>

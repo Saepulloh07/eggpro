@@ -26,21 +26,32 @@ export default function FeedFormulation() {
 
     // Finished feed items for output selector
     const finishedFeedItems = useMemo(() =>
-        inventory.filter(i => i.type === ItemType.FINISHED_FEED && i.houseId === activeHouse?.id), [inventory, activeHouse]);
+        inventory.filter(i => i.type === ItemType.FINISHED_FEED && (!i.houseId || i.houseId === activeHouse?.id)), [inventory, activeHouse]);
 
     // Raw materials only for ingredient dropdown
     const rawMaterialItems = useMemo(() =>
-        inventory.filter(i => i.type === ItemType.RAW_MATERIAL && i.houseId === activeHouse?.id), [inventory, activeHouse]);
+        inventory.filter(i => i.type === ItemType.RAW_MATERIAL && (!i.houseId || i.houseId === activeHouse?.id)), [inventory, activeHouse]);
 
     const activeRecipe = useMemo(() =>
         recipes.find(r => r.id === selectedRecipeId) || recipes[0],
         [selectedRecipeId, recipes]);
 
-    // Kalkulasi kebutuhan bahan baku vs stok saat ini
     const formulationDetails = useMemo(() => {
         if (!activeRecipe || !targetProductionKg) return [];
 
-        return activeRecipe.ingredients.map((ing: any) => {
+        let ingredients = activeRecipe.ingredients;
+        if (typeof ingredients === 'string') {
+            try {
+                ingredients = JSON.parse(ingredients);
+            } catch (e) {
+                console.error("Failed to parse ingredients string:", e);
+                return [];
+            }
+        }
+
+        if (!Array.isArray(ingredients)) return [];
+
+        return ingredients.map((ing: any) => {
             const neededKg = (ing.percentage / 100) * targetProductionKg;
             const inventoryItem = inventory.find(item => item.id === ing.inventoryItemId);
             const currentStock = inventoryItem ? inventoryItem.quantity : 0;
@@ -158,7 +169,7 @@ export default function FeedFormulation() {
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Output: Pakan Jadi</label>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Output: Pakan Jadi Layer Mix</label>
                             <select
                                 value={outputItemId || activeRecipe?.outputInventoryItemId || finishedFeedItems[0]?.id || ''}
                                 onChange={(e) => setOutputItemId(e.target.value)}

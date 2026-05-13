@@ -427,6 +427,55 @@ export default function Finance() {
             [5, 7, 8].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
         });
 
+        // ── SHEET: BUKU KAS UMUM ──────────────────────────────────────────────────────
+        const skbu = wb.addWorksheet('BUKU KAS UMUM');
+        skbu.columns = [6, 14, 40, 14, 18, 18, 20].map(w => ({ width: w }));
+        addSheetTitle(skbu, 'BUKU KAS UMUM', `Kandang: ${activeHouse?.name || 'Semua'} · Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 7);
+        skbu.getRow(4).values = ['No', 'Tanggal', 'Keterangan', 'Jenis', 'Debit (Masuk)', 'Kredit (Keluar)', 'Akun'];
+        [1, 2, 3, 4, 5, 6, 7].forEach(ci => styleHeader(skbu.getCell(4, ci), DARK));
+        skbu.getRow(4).height = 20;
+        let runDebit = 0, runKredit = 0;
+        houseTransactions.forEach((t, i) => {
+            const r = 5 + i; const even = i % 2 === 1;
+            const isDebit = t.type === 'INCOME' || t.type === 'MODAL';
+            const debitVal = isDebit ? t.total : 0;
+            const kreditVal = !isDebit ? t.total : 0;
+            runDebit += debitVal; runKredit += kreditVal;
+            skbu.getRow(r).values = [i + 1, new Date(t.date).toLocaleDateString('id-ID'), t.description, t.type, debitVal || '', kreditVal || '', t.account];
+            [1, 2, 3, 4, 5, 6, 7].forEach(ci => styleData(skbu.getCell(r, ci), even));
+            if (debitVal) { skbu.getCell(r, 5).numFmt = formatIDR; skbu.getCell(r, 5).font = { bold: true, color: { argb: 'FF065F46' } }; }
+            if (kreditVal) { skbu.getCell(r, 6).numFmt = formatIDR; skbu.getCell(r, 6).font = { bold: true, color: { argb: 'FF9F1239' } }; }
+            skbu.getRow(r).height = 16;
+        });
+        const lrKBU = 5 + houseTransactions.length;
+        skbu.mergeCells(`A${lrKBU}:D${lrKBU}`);
+        skbu.getCell(`A${lrKBU}`).value = 'TOTAL';
+        skbu.getCell(`A${lrKBU}`).font = { bold: true };
+        skbu.getCell(`E${lrKBU}`).value = runDebit; skbu.getCell(`E${lrKBU}`).numFmt = formatIDR; skbu.getCell(`E${lrKBU}`).font = { bold: true };
+        skbu.getCell(`F${lrKBU}`).value = runKredit; skbu.getCell(`F${lrKBU}`).numFmt = formatIDR; skbu.getCell(`F${lrKBU}`).font = { bold: true };
+        [skbu.getCell(`A${lrKBU}`), skbu.getCell(`E${lrKBU}`), skbu.getCell(`F${lrKBU}`), skbu.getCell(`G${lrKBU}`)].forEach(c => {
+            c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+        });
+
+        // ── SHEET: HUTANG & PIUTANG (AP/AR) ──────────────────────────────────────────
+        const houseApAr = apArRecords.filter(r => !activeHouse || r.houseId === activeHouse.id || !r.houseId);
+        const sapar = wb.addWorksheet('HUTANG & PIUTANG');
+        sapar.columns = [8, 14, 28, 20, 18, 18, 12].map(w => ({ width: w }));
+        addSheetTitle(sapar, 'BUKU HUTANG & PIUTANG (AP / AR)', `Total Records: ${houseApAr.length}`, 7);
+        sapar.getRow(4).values = ['No', 'Jatuh Tempo', 'Nama Mitra', 'Keterangan', 'Total Tagihan (Rp)', 'Sisa Terutang (Rp)', 'Status'];
+        [1, 2, 3, 4, 5, 6, 7].forEach(ci => styleHeader(sapar.getCell(4, ci), DARK));
+        sapar.getRow(4).height = 20;
+        houseApAr.forEach((r, i) => {
+            const row = 5 + i; const even = i % 2 === 1;
+            sapar.getRow(row).values = [i + 1, r.dueDate ? new Date(r.dueDate).toLocaleDateString('id-ID') : '-', r.entityName, r.description || '-', r.amount, r.remainingAmount, r.status];
+            [1, 2, 3, 4, 5, 6, 7].forEach(ci => styleData(sapar.getCell(row, ci), even));
+            [5, 6].forEach(ci => { sapar.getCell(row, ci).numFmt = formatIDR; });
+            // Color HUTANG red, PIUTANG green
+            const isHutang = (r as any).type === 'HUTANG';
+            sapar.getCell(row, 5).font = { bold: true, color: { argb: isHutang ? 'FF9F1239' : 'FF065F46' } };
+            sapar.getRow(row).height = 16;
+        });
+
         const buffer = await wb.xlsx.writeBuffer();
         saveAs(new Blob([buffer]), `Laporan_Keuangan_${activeHouse?.name || 'Farm'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
@@ -1001,26 +1050,95 @@ export default function Finance() {
                             {activeTab === 'BUKU_TRANSAKSI' && (
                                 <div className="space-y-8">
 
-                                    {/* SECTION 0: KAS & BANK BALANCES */}
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        {accounts.filter(a => a.isCashOrBank || a.name.toLowerCase().includes('kas') || a.name.toLowerCase().includes('bank')).map(acc => {
-                                            const { debit, credit } = getAccountBalance(acc.id, activeHouse?.id);
-                                            const balance = debit - credit;
+                                    {/* SECTION 0: KAS & BANK BALANCES — Semua akun kas/bank */}
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                        {accounts.filter(a => a.isCashOrBank).map(acc => {
+                                            const bal = getAccountBalance(acc.id);
+                                            const balance = bal.debit - bal.credit;
+                                            const isHouseKas = acc.id.startsWith('acc-kas-');
+                                            const linkedHouse = isHouseKas
+                                                ? houses.find(h => acc.houseId === h.id || acc.id === `acc-kas-${h.id}`)
+                                                : null;
                                             return (
-                                                <div key={acc.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm relative overflow-hidden group">
+                                                <div key={acc.id} className={`bg-white border rounded-xl p-4 shadow-sm relative overflow-hidden group ${isHouseKas && activeHouse && linkedHouse?.id === activeHouse.id ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'}`}>
                                                     <div className="absolute -right-4 -top-4 opacity-5 group-hover:opacity-10 transition-opacity">
                                                         <Wallet size={80} />
                                                     </div>
                                                     <div className="flex items-center gap-2 mb-2">
-                                                        <div className="bg-emerald-50 p-1.5 rounded-lg text-emerald-600"><Wallet size={14} /></div>
-                                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{acc.name}</p>
+                                                        <div className={`p-1.5 rounded-lg ${isHouseKas ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}><Wallet size={14} /></div>
+                                                        <div>
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{acc.name}</p>
+                                                            {linkedHouse && <p className="text-[8px] text-amber-600 font-bold uppercase">{linkedHouse.name}</p>}
+                                                        </div>
                                                     </div>
-                                                    <p className="text-lg font-black text-slate-900">{formatCurrency(balance)}</p>
+                                                    <p className={`text-lg font-black ${balance >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>{formatCurrency(balance)}</p>
                                                     <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">No. Rek: {acc.code}</p>
                                                 </div>
                                             );
                                         })}
                                     </div>
+
+                                    {/* BUKU KAS UMUM — Semua transaksi per kandang */}
+                                    <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
+                                        <div className="px-8 py-5 border-b border-slate-100 bg-slate-900 flex items-center justify-between">
+                                            <div>
+                                                <h3 className="font-bold text-base text-white uppercase tracking-tight italic">Buku Kas Umum</h3>
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Semua mutasi kas · {houseTransactions.length} transaksi</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Saldo Akhir</p>
+                                                <p className={`text-lg font-black ${(totalIncome - totalExpenses) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(totalIncome - totalExpenses + totalModalAwal)}</p>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse min-w-max">
+                                                <thead>
+                                                    <tr className="bg-slate-800 text-white text-[9px] font-black uppercase tracking-widest">
+                                                        <th className="px-3 py-3 w-8">No</th>
+                                                        <th className="px-3 py-3">Tanggal</th>
+                                                        <th className="px-3 py-3">Keterangan</th>
+                                                        <th className="px-3 py-3 text-center">Jenis</th>
+                                                        <th className="px-3 py-3 text-right">Debit (Masuk)</th>
+                                                        <th className="px-3 py-3 text-right">Kredit (Keluar)</th>
+                                                        <th className="px-3 py-3">Akun</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-[10px] divide-y divide-slate-50">
+                                                    {houseTransactions.length === 0 ? (
+                                                        <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada transaksi di kandang ini</td></tr>
+                                                    ) : [...houseTransactions].reverse().map((t, idx) => (
+                                                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="px-3 py-2.5 text-slate-400 font-bold">{idx + 1}</td>
+                                                            <td className="px-3 py-2.5 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                            <td className="px-3 py-2.5 font-bold text-slate-800 max-w-[200px] truncate">{t.description}</td>
+                                                            <td className="px-3 py-2.5 text-center">
+                                                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${
+                                                                    t.type === 'INCOME' ? 'bg-emerald-50 text-emerald-700' :
+                                                                    t.type === 'EXPENSE' ? 'bg-rose-50 text-rose-700' :
+                                                                    t.type === 'MODAL' ? 'bg-blue-50 text-blue-700' :
+                                                                    'bg-slate-100 text-slate-600'
+                                                                }`}>{t.type}</span>
+                                                            </td>
+                                                            <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">{(t.type === 'INCOME' || t.type === 'MODAL') ? formatCurrency(t.total) : '-'}</td>
+                                                            <td className="px-3 py-2.5 text-right font-mono font-bold text-rose-600">{t.type === 'EXPENSE' ? formatCurrency(t.total) : '-'}</td>
+                                                            <td className="px-3 py-2.5 text-slate-500 text-[9px]">{t.account}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                                {houseTransactions.length > 0 && (
+                                                    <tfoot className="bg-slate-100 border-t-2 border-slate-300">
+                                                        <tr>
+                                                            <td colSpan={4} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700">TOTAL</td>
+                                                            <td className="px-3 py-3 text-right font-black text-emerald-700 font-mono">{formatCurrency(totalIncome + totalModalAwal)}</td>
+                                                            <td className="px-3 py-3 text-right font-black text-rose-600 font-mono">{formatCurrency(totalExpenses)}</td>
+                                                            <td />
+                                                        </tr>
+                                                    </tfoot>
+                                                )}
+                                            </table>
+                                        </div>
+                                    </div>
+
 
                                     {/* SECTION 1: PENJUALAN TELUR */}
                                     <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
@@ -1741,8 +1859,55 @@ export default function Finance() {
                     </button>
                 </form>
             </Modal>
+            {/* MODAL: AP/AR - TAMBAH TAGIHAN HUTANG / PIUTANG */}
+            <Modal isOpen={isApArModalOpen} onClose={() => setIsApArModalOpen(false)} title="Tambah Tagihan Hutang / Piutang">
+                <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.target as HTMLFormElement);
+                    addAPARRecord({
+                        type: fd.get('type') as 'HUTANG' | 'PIUTANG',
+                        entityName: fd.get('entityName') as string,
+                        description: fd.get('description') as string,
+                        amount: Number(fd.get('amount')),
+                        remainingAmount: Number(fd.get('amount')),
+                        dueDate: fd.get('dueDate') as string,
+                        status: 'OPEN',
+                        houseId: activeHouse?.id,
+                    });
+                    setIsApArModalOpen(false);
+                    Swal.fire({ title: 'Berhasil!', text: 'Tagihan berhasil ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a', timer: 1500, showConfirmButton: false });
+                }} className="space-y-5">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jenis</label>
+                            <select name="type" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                                <option value="HUTANG">HUTANG (AP) — Kita berhutang</option>
+                                <option value="PIUTANG">PIUTANG (AR) — Orang berhutang ke kita</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jatuh Tempo</label>
+                            <input name="dueDate" type="date" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Nama Mitra / Pihak</label>
+                        <input name="entityName" type="text" required placeholder="Cth: Supplier Pakan Jaya" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Total Tagihan (Rp)</label>
+                        <input name="amount" type="number" min="1" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 font-mono" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Keterangan</label>
+                        <input name="description" type="text" placeholder="Cth: Pembelian 1 ton pakan ternak" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                    </div>
+                    <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 flex items-center justify-center gap-2">
+                        <Plus size={14} /> Simpan Tagihan
+                    </button>
+                </form>
+            </Modal>
 
         </>
     );
 }
-

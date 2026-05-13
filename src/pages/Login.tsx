@@ -4,8 +4,8 @@
  */
 
 import React, { useState } from 'react';
-import { Egg, Key, Loader2, ChevronRight, Shield, User as UserIcon, Wrench } from 'lucide-react';
-import { useApp, MOCK_USERS } from '../AppContext';
+import { Egg, Key, Loader2, ChevronRight, Shield, User as UserIcon, Wrench, CheckCircle2 } from 'lucide-react';
+import { useApp } from '../AppContext';
 import { UserRole } from '../types';
 import { cn } from '../lib/utils';
 
@@ -16,23 +16,39 @@ const ROLE_META = {
 };
 
 export default function Login() {
-  const { login, loginAs } = useApp();
+  const { login, loginAs, setAuthUser } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
-    setTimeout(() => {
-      const success = login(email, password);
-      if (!success) {
-        setError('Email atau password salah. Coba gunakan akun demo di bawah.');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, rememberMe }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setAuthUser(data.user);
+        if (rememberMe) {
+          localStorage.setItem('poultry_session', JSON.stringify(data.user));
+          localStorage.setItem('poultry_remember', 'true');
+        }
+      } else {
+        setError(data.message || 'Email atau password salah.');
       }
+    } catch (err) {
+      setError('Gagal terhubung ke server backend.');
+    } finally {
       setIsLoading(false);
-    }, 600);
+    }
   };
 
   const handleQuickLogin = (userId: string) => {
@@ -93,6 +109,24 @@ export default function Login() {
               </div>
             </div>
 
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className={cn(
+                  "w-4 h-4 border border-slate-200 rounded-sm flex items-center justify-center transition-all",
+                  rememberMe ? "bg-amber-500 border-amber-600 shadow-sm" : "bg-slate-50 group-hover:border-slate-400"
+                )}>
+                  {rememberMe && <CheckCircle2 size={12} className="text-white" />}
+                  <input 
+                    type="checkbox" 
+                    className="hidden" 
+                    checked={rememberMe} 
+                    onChange={e => setRememberMe(e.target.checked)} 
+                  />
+                </div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ingat Saya</span>
+              </label>
+            </div>
+
             {error && (
               <p className="text-[10px] text-rose-600 font-bold bg-rose-50 border border-rose-200 px-3 py-2 rounded-sm">
                 {error}
@@ -109,38 +143,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          {/* Quick Demo Login */}
-          <div className="px-10 py-8 mt-2">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex-1 h-px bg-slate-100" />
-              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-300">Demo Cepat</span>
-              <div className="flex-1 h-px bg-slate-100" />
-            </div>
-            <div className="grid gap-2">
-              {MOCK_USERS.map(u => {
-                const meta = ROLE_META[u.role];
-                const Icon = meta.icon;
-                return (
-                  <button
-                    key={u.id}
-                    onClick={() => handleQuickLogin(u.id)}
-                    disabled={isLoading}
-                    className="flex items-center gap-3 w-full border border-slate-100 bg-slate-50 hover:border-amber-200 hover:bg-amber-50 px-4 py-3 text-left transition-all group"
-                  >
-                    <div className={cn('w-7 h-7 rounded-sm flex items-center justify-center shrink-0', meta.color)}>
-                      <Icon size={13} className="text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] font-black text-slate-900 uppercase tracking-tight">{u.name}</p>
-                      <p className="text-[9px] text-slate-400 font-medium truncate">{meta.desc}</p>
-                    </div>
-                    <ChevronRight size={12} className="text-slate-300 group-hover:text-amber-500 transition-colors" />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </div>
 
         <p className="text-center mt-6 text-slate-600 text-[9px] font-bold uppercase tracking-[0.4em] opacity-30">

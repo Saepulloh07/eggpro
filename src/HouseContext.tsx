@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import localforage from 'localforage';
+import { syncToDb, loadFromDbOrIndexedDB } from './syncUtils';
 import { PoultryHouse } from './types';
 
 interface HouseContextType {
@@ -6,7 +8,7 @@ interface HouseContextType {
   selectedHouseId: string;
   setSelectedHouseId: (id: string) => void;
   activeHouse: PoultryHouse | undefined;
-  addHouse: (name: string, capacity?: number, area?: number, managerId?: string, purchaseDate?: string, purchasePrice?: number) => void;
+  addHouse: (name: string, capacity?: number, area?: number, managerId?: string, purchaseDate?: string, purchasePrice?: number) => Promise<void>;
   updateHouse: (id: string, updates: Partial<PoultryHouse>) => void;
   deleteHouse: (id: string) => void;
 }
@@ -14,29 +16,32 @@ interface HouseContextType {
 const HouseContext = createContext<HouseContextType | undefined>(undefined);
 
 export const HouseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [houses, setHouses] = useState<PoultryHouse[]>(() => {
-    const saved = localStorage.getItem('poultry_houses');
-    return saved ? JSON.parse(saved) : [
-      { id: 'h1', name: 'Kandang A', location: 'Section Utara', capacity: 5000, area: 1000 },
-      { id: 'h2', name: 'Kandang B', location: 'Section Selatan', capacity: 4500, area: 900 }
-    ];
-  });
-
-  const [selectedHouseId, setSelectedHouseId] = useState<string>(() => {
-    return localStorage.getItem('selected_house_id') || (houses[0]?.id || '');
-  });
+  const [houses, setHouses] = useState<PoultryHouse[]>([]);
+  const [selectedHouseId, setSelectedHouseId] = useState<string>('');
 
   useEffect(() => {
-    localStorage.setItem('poultry_houses', JSON.stringify(houses));
+    if (houses.length > 0) syncToDb('poultry_houses', houses);
   }, [houses]);
 
   useEffect(() => {
-    localStorage.setItem('selected_house_id', selectedHouseId);
+    if (selectedHouseId) localforage.setItem('selected_house_id', selectedHouseId);
   }, [selectedHouseId]);
+
+  useEffect(() => {
+    loadFromDbOrIndexedDB('poultry_houses', (data) => {
+      setHouses(data);
+      if (data.length > 0 && !selectedHouseId) {
+        setSelectedHouseId(data[0].id);
+      }
+    });
+    localforage.getItem('selected_house_id').then(id => {
+      if (id) setSelectedHouseId(id as string);
+    });
+  }, []);
 
   const activeHouse = houses.find(h => h.id === selectedHouseId) || houses[0];
 
-  const addHouse = (name: string, capacity = 0, area = 0, managerId?: string, purchaseDate?: string, purchasePrice?: number) => {
+  const addHouse = async (name: string, capacity = 0, area = 0, managerId?: string, purchaseDate?: string, purchasePrice?: number) => {
     const newHouse: PoultryHouse = {
       id: `h${Date.now()}`,
       name,
@@ -48,6 +53,20 @@ export const HouseProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setHouses(prev => [...prev, newHouse]);
     setSelectedHouseId(newHouse.id);
+
+    // Auto-create Kas Kandang account in backend
+    try {
+      const res = await fetch('/api/admin/create-house-kas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ houseId: newHouse.id, houseName: name })
+      });
+      if (res.ok) {
+        console.log(`[HouseContext] Kas account created for house: ${name}`);
+      }
+    } catch(e) {
+      console.warn('[HouseContext] Could not create kas account (offline?):', e);
+    }
   };
 
   const updateHouse = (id: string, updates: Partial<PoultryHouse>) => {

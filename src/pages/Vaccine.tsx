@@ -14,6 +14,8 @@ import { cn } from '../lib/utils';
 import Modal from '../components/Modal';
 import { useHouse } from '../HouseContext';
 import { useFlock } from '../FlockContext';
+import { useGlobalData } from '../GlobalContext';
+import { BiosecurityRecord } from '../types';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,26 +23,8 @@ type VaccineType = 'VAKSIN' | 'VITAMIN' | 'OBAT' | 'BIOSEKURITI';
 type VaccineStatus = 'SCHEDULED' | 'DONE' | 'MISSED';
 type VaccineRoute = 'Air Minum' | 'Suntik' | 'Tetes Mata' | 'Spray' | 'Oral';
 
-interface VaccineRecord {
-  id: string;
-  houseId: string;
-  date: string;
-  type: VaccineType;
-  name: string;
-  route: VaccineRoute;
-  dosage: string;
-  ageWeekTarget: number;
-  ageDayTarget?: number; // Added for DOC tracking
-  notes: string;
-  status: VaccineStatus;
-  symptomsBefore?: string;
-  symptomsAfter?: string;
-  composition?: {        // Added for complex treatments like Mite Spray
-    name: string;
-    amount: number;
-    unit: string;
-  }[];
-}
+// Use BiosecurityRecord from ../types
+
 
 const getDOCAge = (arrivalDate: string, arrivalAgeWeeks: number) => {
   if (!arrivalDate) return 0;
@@ -104,7 +88,7 @@ const STORAGE_KEY = 'poultry_vaccine_records';
 
 // ─── Default Schedule ───────────────────────────────────────────────────────────
 
-const DEFAULT_SCHEDULE: Omit<VaccineRecord, 'id' | 'houseId'>[] = [
+const DEFAULT_SCHEDULE: Omit<BiosecurityRecord, 'id' | 'houseId'>[] = [
   { date: '', type: 'VAKSIN', name: 'ND-IB (Ma5+Clone 30) Live', route: 'Air Minum', dosage: '1 dosis/ekor', ageWeekTarget: 4, notes: 'Puasa air 2 jam sebelum pemberian', status: 'SCHEDULED' },
   { date: '', type: 'VAKSIN', name: 'Gumboro Intermediate', route: 'Air Minum', dosage: '1 dosis/ekor', ageWeekTarget: 10, notes: 'Pastikan kandang sejuk', status: 'SCHEDULED' },
   { date: '', type: 'VAKSIN', name: 'ND-IB Killed (H120)', route: 'Suntik', dosage: '0.5 ml/ekor', ageWeekTarget: 16, notes: 'Suntik subkutan di leher', status: 'SCHEDULED' },
@@ -114,7 +98,7 @@ const DEFAULT_SCHEDULE: Omit<VaccineRecord, 'id' | 'houseId'>[] = [
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM: Omit<VaccineRecord, 'id' | 'houseId'> = {
+const EMPTY_FORM: Omit<BiosecurityRecord, 'id' | 'houseId'> = {
   date: new Date().toISOString().split('T')[0],
   type: 'VAKSIN',
   name: '',
@@ -131,25 +115,24 @@ const ITEMS_PER_PAGE = 5;
 export default function Vaccine() {
   const { activeHouse } = useHouse();
   const { getActiveFlockByHouse } = useFlock();
+  const { biosecurityRecords, addBiosecurityRecord, addBiosecurityRecordsBulk, updateBiosecurityRecord, deleteBiosecurityRecord } = useGlobalData();
+
+  
   const activeBatch = getActiveFlockByHouse(activeHouse?.id || '');
   const docAge = activeBatch ? getDOCAge(activeBatch.arrivalDate, activeBatch.arrivalAgeWeeks) : 0;
 
-  const [records, setRecords] = useState<VaccineRecord[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  });
+  const records = biosecurityRecords;
+
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<VaccineRecord | null>(null);
-  const [form, setForm] = useState<Omit<VaccineRecord, 'id' | 'houseId'>>(EMPTY_FORM);
+  const [editingRecord, setEditingRecord] = useState<BiosecurityRecord | null>(null);
+  const [form, setForm] = useState<Omit<BiosecurityRecord, 'id' | 'houseId'>>(EMPTY_FORM as any);
   const [activeFilter, setActiveFilter] = useState<VaccineStatus | 'ALL'>('ALL');
+
   const [currentPage, setCurrentPage] = useState(1);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  }, [records]);
-
   const houseRecords = records.filter(r => r.houseId === activeHouse?.id);
+
   const sortedRecords = [...houseRecords].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   const filteredRecords = activeFilter === 'ALL'
     ? sortedRecords
@@ -184,10 +167,10 @@ export default function Vaccine() {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (rec: VaccineRecord) => {
+  const openEditModal = (rec: BiosecurityRecord) => {
     setEditingRecord(rec);
     const { id, houseId, ...rest } = rec;
-    setForm(rest);
+    setForm(rest as any);
     setIsModalOpen(true);
   };
 
@@ -197,31 +180,29 @@ export default function Vaccine() {
       return;
     }
     if (editingRecord) {
-      setRecords(prev => prev.map(r => r.id === editingRecord.id ? { ...r, ...form } : r));
+      updateBiosecurityRecord(editingRecord.id, form as any);
     } else {
-      setRecords(prev => [...prev, { ...form, id: `vax-${Date.now()}`, houseId: activeHouse?.id || '' }]);
+      addBiosecurityRecord({ ...form, houseId: activeHouse?.id || '' } as any);
     }
     setIsModalOpen(false);
     Swal.fire({ title: 'Tersimpan!', icon: 'success', confirmButtonColor: '#0f172a', timer: 1500, showConfirmButton: false });
   };
 
   const handleStatusChange = (id: string, status: VaccineStatus) => {
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+    updateBiosecurityRecord(id, { status } as any);
   };
 
   const handleDelete = (id: string) => {
     Swal.fire({
       title: 'Hapus Jadwal?', icon: 'warning', showCancelButton: true,
       confirmButtonColor: '#e11d48', confirmButtonText: 'Hapus', cancelButtonText: 'Batal'
-    }).then(r => { if (r.isConfirmed) setRecords(prev => prev.filter(x => x.id !== id)); });
+    }).then(r => { if (r.isConfirmed) deleteBiosecurityRecord(id); });
   };
 
   const loadDefaultSchedule = () => {
     if (!activeHouse) return;
-    const defaults = DEFAULT_SCHEDULE.map(d => ({
-      ...d, id: `vax-${Date.now()}-${Math.random().toString(36).slice(2)}`, houseId: activeHouse.id,
-    }));
-    setRecords(prev => [...prev, ...defaults]);
+    const bulkData = DEFAULT_SCHEDULE.map(d => ({ ...d, houseId: activeHouse.id }));
+    addBiosecurityRecordsBulk(bulkData as any);
     Swal.fire({ title: 'Jadwal Standar Dimuat!', text: 'Jadwal vaksin default berhasil ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a' });
   };
 

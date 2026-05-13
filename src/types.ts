@@ -321,10 +321,17 @@ export interface BiosecurityRecord {
   id: string;
   houseId: string;
   date: string;
-  type: 'VACCINE' | 'VITAMIN' | 'SYMPTOM';
-  title: string;
-  description: string;
+  type: 'VAKSIN' | 'VITAMIN' | 'OBAT' | 'BIOSEKURITI' | 'SYMPTOM';
+  name: string;
+  route?: string;
+  dosage?: string;
+  ageWeekTarget?: number;
+  ageDayTarget?: number;
+  notes?: string;
   status: 'SCHEDULED' | 'DONE' | 'MISSED';
+  symptomsBefore?: string;
+  symptomsAfter?: string;
+  composition?: any;
 }
 
 // NEW: Mortality Record — links a production day's death to a cause

@@ -37,8 +37,9 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Inventory() {
-  const { activeHouse } = useHouse();
-  const { inventory, updateInventory, updateInventoryItem, addInventoryItem, createStockMutation, addJournalEntry, addTransaction, addAPARRecord, transactions, productionLogs, farmSettings, accounts } = useGlobalData();
+  const { activeHouse, houses } = useHouse();
+  const { inventory, updateInventory, updateInventoryItem, addInventoryItem, createStockMutation, addJournalEntry, addTransaction, addAPARRecord, transactions, productionLogs, farmSettings, accounts, getHouseCashBalance, createInterHouseDebt } = useGlobalData();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -121,24 +122,40 @@ export default function Inventory() {
           });
         }
 
-        // Determine who paid
-        const selectedAcc = accounts.find(a => a.id === selectedAccountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
-        // Parse the selected string if we added houseId to it in the form
-        const [accId, paidByHouseId] = selectedAccountId.split('|');
-        const finalAcc = accounts.find(a => a.id === accId) || selectedAcc;
+        const totalCost = newItem.quantity * newItem.price;
 
-        if (newItem.price > 0) {
-          const totalCost = newItem.quantity * newItem.price;
+        // Determine paying house from selected account format: "accId|houseId"
+        const [accId, paidByHouseId] = selectedAccountId.split('|');
+        const finalAcc = accounts.find(a => a.id === accId) || accounts.find(a => a.isCashOrBank) || accounts[0];
+        const payingHouseId = paidByHouseId || activeHouse?.id || '';
+
+        // Check if house has sufficient balance, if not offer inter-house debt
+        const houseBalance = getHouseCashBalance(payingHouseId);
+        if (houseBalance < totalCost) {
+          const deficit = totalCost - Math.max(houseBalance, 0);
+          // Find another house that can cover
+          const otherHouse = houses.find(h => h.id !== payingHouseId && getHouseCashBalance(h.id) >= deficit);
+          if (otherHouse) {
+            createInterHouseDebt(
+              payingHouseId,
+              otherHouse.id,
+              deficit,
+              `Talangan Pembelian Stok: ${newItem.name}`
+            );
+          }
+        }
+
+
           const journalId = addJournalEntry(
-            { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang Pusat: ${newItem.name}`, reference: `BELI-${Date.now()}` },
+            { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang: ${newItem.name}`, reference: `BELI-${Date.now()}` },
             [
-              { accountId: 'acc-persediaan', debit: totalCost, credit: 0 },
-              { accountId: finalAcc.id, debit: 0, credit: totalCost }
+              { accountId: 'acc-persediaan-pakan', debit: totalCost, credit: 0, houseId: payingHouseId },
+              { accountId: finalAcc.id, debit: 0, credit: totalCost, houseId: payingHouseId }
             ]
           );
 
           addTransaction({
-            houseId: paidByHouseId || 'CENTRAL', // The house that pays
+            houseId: payingHouseId,
             date: new Date().toISOString().split('T')[0],
             description: `Pembelian Stok Gudang Pusat: ${newItem.name}`,
             qty: `${newItem.quantity} ${newItem.unit}`,
@@ -150,44 +167,18 @@ export default function Inventory() {
             journalId
           });
 
-          // Create Internal AP/AR if a specific House paid for Central Warehouse
-          if (paidByHouseId && paidByHouseId !== 'CENTRAL') {
-            // Pusat berhutang ke Kandang
-            addAPARRecord({
-              type: 'HUTANG',
-              entityName: `Kandang ${paidByHouseId} (Internal)`,
-              description: `Talangan Pembelian Stok: ${newItem.name}`,
-              amount: totalCost,
-              remainingAmount: totalCost,
-              dueDate: new Date().toISOString().split('T')[0],
-              status: 'OPEN'
-            });
-
-            // Kandang memberi Piutang ke Pusat
-            addAPARRecord({
-              type: 'PIUTANG',
-              entityName: `Pusat (Internal)`,
-              description: `Talangan Pembelian Stok: ${newItem.name}`,
-              amount: totalCost,
-              remainingAmount: totalCost,
-              dueDate: new Date().toISOString().split('T')[0],
-              status: 'OPEN'
-            });
-          }
-        }
-
-        createStockMutation({
-          date: new Date().toISOString().split('T')[0],
-          itemId: finalItemId,
-          type: StockMutationType.PURCHASE,
-          quantity: newItem.quantity,
-          unitCost: newItem.price,
-          sourceLocation: 'SUPPLIER',
-          targetLocation: 'CENTRAL',
-          paidByHouseId: paidByHouseId || 'CENTRAL',
-          reference: `BELI-${Date.now()}`,
-          notes: `Dibayar menggunakan ${finalAcc.name} (${paidByHouseId === 'CENTRAL' ? 'Pusat' : 'Kandang'})`
-        });
+          createStockMutation({
+            date: new Date().toISOString().split('T')[0],
+            itemId: finalItemId,
+            type: StockMutationType.PURCHASE,
+            quantity: newItem.quantity,
+            unitCost: newItem.price,
+            sourceLocation: 'SUPPLIER',
+            targetLocation: 'CENTRAL',
+            paidByHouseId: payingHouseId,
+            reference: `BELI-${Date.now()}`,
+            notes: `Dibayar oleh Kandang — ${finalAcc.name}`
+          });
 
         Swal.fire({
           title: 'Stok Ditambahkan!',
@@ -328,26 +319,40 @@ export default function Inventory() {
               />
             </div>
             <div className="col-span-2 bg-emerald-50/50 p-4 border border-emerald-100 rounded-sm">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-emerald-800 block mb-2">Sumber Dana / Dibayar Oleh</label>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-emerald-800 block mb-2">Dibayar Oleh (Kas Kandang)</label>
               <select
                 required
                 value={selectedAccountId}
                 onChange={(e) => setSelectedAccountId(e.target.value)}
                 className="w-full bg-white border border-emerald-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-emerald-500 transition-all shadow-sm"
               >
-                <option value="">Pilih Rekening & Kandang Pembayar</option>
-                <optgroup label="Kas Gudang Pusat (Pusat)">
-                  {accounts.filter(a => a.isCashOrBank).map(a => (
-                    <option key={`central-${a.id}`} value={`${a.id}|CENTRAL`}>{a.name} (Pusat)</option>
-                  ))}
+                <option value="">Pilih Sumber Dana...</option>
+                {/* Kas per Kandang */}
+                <optgroup label="─── Kas Kandang ───">
+                  {houses.map(h => {
+                    const kasId = `acc-kas-${h.id}`;
+                    const kasAcc = accounts.find(a => a.id === kasId);
+                    const balance = getHouseCashBalance(h.id);
+                    return kasAcc ? (
+                      <option key={kasId} value={`${kasId}|${h.id}`}>
+                        💰 {h.name} — {kasAcc.name} (Saldo: Rp {balance.toLocaleString('id-ID')})
+                      </option>
+                    ) : null;
+                  })}
                 </optgroup>
-                <optgroup label="Kas dari Kandang Aktif">
-                  {accounts.filter(a => a.isCashOrBank).map(a => (
-                    <option key={`house-${a.id}`} value={`${a.id}|${activeHouse?.id}`}>{a.name} (Kandang {activeHouse?.name})</option>
-                  ))}
+                {/* Semua akun Bank */}
+                <optgroup label="─── Rekening Bank ───">
+                  {accounts.filter(a => a.isCashOrBank && !a.id.startsWith('acc-kas-')).map(a => {
+                    const bal = 0; // bank balance computed from journal lines if needed
+                    return (
+                      <option key={a.id} value={`${a.id}|${activeHouse?.id || ''}`}>
+                        🏦 {a.name} [{a.code}]
+                      </option>
+                    );
+                  })}
                 </optgroup>
               </select>
-              <p className="text-[9px] text-emerald-600 mt-2 italic">* Pilih siapa yang membayarkan stok ini. Stok akan selalu masuk ke Gudang Pusat.</p>
+              <p className="text-[9px] text-emerald-600 mt-2 italic">* Pilih kas/bank yang membayar. Jika saldo tidak cukup, sistem akan otomatis catat Hutang Antar Kandang.</p>
             </div>
           </div>
           <div>

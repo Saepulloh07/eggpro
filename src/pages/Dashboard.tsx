@@ -230,7 +230,7 @@ export default function Dashboard() {
   const netPL = totalRevenue - totalExpenses;
 
   // ── Egg breakdown summary (last log) ──────────────────────────────────────
-  const eggBreakdownData = lastLog ? [
+  const eggBreakdownData = lastLog && lastLog.breakdown ? [
     { name: 'Normal', value: (lastLog.breakdown[EggCategory.BM] || 0) + (lastLog.breakdown[EggCategory.KRC] || 0) + (lastLog.breakdown[EggCategory.KS] || 0) + (lastLog.breakdown[EggCategory.PELOR] || 0), fill: '#22c55e' },
     { name: 'Retak', value: (lastLog.breakdown[EggCategory.RETAK] || 0) + (lastLog.breakdown[EggCategory.KRC_RETAK] || 0) + (lastLog.breakdown[EggCategory.KS_RETAK] || 0), fill: '#f59e0b' },
     { name: 'Pecah', value: (lastLog.breakdown[EggCategory.PECAH] || 0), fill: '#ef4444' },

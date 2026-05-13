@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { FlockBatch, PopulationMutation, MutationType, MortalityCause } from './types';
 import { useGlobalData } from './GlobalContext';
+import { syncToDb, loadFromDbOrIndexedDB } from './syncUtils';
 
 interface FlockContextType {
   flocks: FlockBatch[];
@@ -18,47 +19,21 @@ const FlockContext = createContext<FlockContextType | undefined>(undefined);
 
 export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { addTransaction, deleteTransaction } = useGlobalData();
-  const [flocks, setFlocks] = useState<FlockBatch[]>(() => {
-    const saved = localStorage.getItem('poultry_flocks');
-    if (saved) return JSON.parse(saved);
-
-    // Default initial data
-    return [
-      {
-        id: 'f1',
-        houseId: 'h1',
-        strain: 'Isa Brown',
-        arrivalDate: '2025-06-01',
-        arrivalAgeWeeks: 16,
-        initialCount: 5000,
-        currentCount: 4950,
-        isActive: true
-      },
-      {
-        id: 'f2',
-        houseId: 'h2',
-        strain: 'Lohmann Brown',
-        arrivalDate: '2025-08-15',
-        arrivalAgeWeeks: 0,
-        initialCount: 4500,
-        currentCount: 4480,
-        isActive: true
-      }
-    ];
-  });
-
-  const [mutations, setMutations] = useState<PopulationMutation[]>(() => {
-    const saved = localStorage.getItem('poultry_mutations');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [flocks, setFlocks] = useState<FlockBatch[]>([]);
+  const [mutations, setMutations] = useState<PopulationMutation[]>([]);
 
   useEffect(() => {
-    localStorage.setItem('poultry_flocks', JSON.stringify(flocks));
+    if (flocks.length > 0) syncToDb('poultry_flocks', flocks);
   }, [flocks]);
 
   useEffect(() => {
-    localStorage.setItem('poultry_mutations', JSON.stringify(mutations));
+    if (mutations.length > 0) syncToDb('poultry_mutations', mutations);
   }, [mutations]);
+
+  useEffect(() => {
+    loadFromDbOrIndexedDB('poultry_flocks', setFlocks);
+    loadFromDbOrIndexedDB('poultry_mutations', setMutations);
+  }, []);
 
   const addFlock = (flockData: Omit<FlockBatch, 'id'>) => {
     const newFlock: FlockBatch = {
