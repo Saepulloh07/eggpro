@@ -222,12 +222,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   
   const createStockMutation = (mutation: Omit<StockMutation, 'id' | 'totalCost'>) => {
-    setStockMutations(prev => [...prev, { ...mutation, id: `mut-${Date.now()}`, totalCost: mutation.quantity * mutation.unitCost }]);
+    const id = `mut-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    setStockMutations(prev => [...prev, { ...mutation, id, totalCost: mutation.quantity * mutation.unitCost }]);
   };
   
   // ─── Accounting Actions ──────────────────────────────────────────────────────
   const addJournalEntry = (entry: Omit<JournalEntry, 'id'>, lines: Omit<JournalLine, 'id' | 'journalId'>[]) => {
-    const journalId = `jrn-${Date.now()}`;
+    const journalId = `jrn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     setJournalEntries(prev => [...prev, { ...entry, id: journalId }]);
     setJournalLines(prev => [
       ...prev,
@@ -237,12 +238,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addAPARRecord = (record: Omit<APARRecord, 'id' | 'createdAt'>) => {
-    setApArRecords(prev => [...prev, { ...record, id: `apar-${Date.now()}`, createdAt: new Date().toISOString() }]);
+    const id = `apar-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    setApArRecords(prev => [...prev, { ...record, id, createdAt: new Date().toISOString() }]);
   };
 
   const updateAPARRecord = (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => {
+    let affectedRecord: APARRecord | undefined;
+    
     setApArRecords(prev => prev.map(r => {
       if (r.id === id) {
+        affectedRecord = r;
         const newRemaining = Math.max(0, r.remainingAmount - paymentAmount);
         const newStatus = newRemaining === 0 ? 'CLOSED' : 'PARTIAL';
         const paymentEntry = {
@@ -261,6 +266,52 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return r;
     }));
+
+    if (affectedRecord) {
+      const r = affectedRecord;
+      const today = new Date().toISOString().split('T')[0];
+      const account = accounts.find(a => a.id === paymentAccountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
+
+      // Create journal entry: 
+      // If HUTANG: Debit Payable (acc-hutang-pakan / acc-hutang-doc), Credit Cash
+      // If PIUTANG: Debit Cash, Credit Receivable (acc-piutang-telur)
+      const isHutang = r.type === 'HUTANG';
+      const payableAccountId = r.description.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' : 
+                               r.description.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
+      const receivableAccountId = 'acc-piutang-telur';
+
+      const journalId = addJournalEntry({
+        date: today,
+        description: `Pelunasan ${r.type}: ${r.entityName} - ${notes || r.description}`,
+        reference: `PAY-${r.id.slice(-4)}-${Date.now().toString().slice(-4)}`
+      }, [
+        { 
+          accountId: isHutang ? payableAccountId : account.id, 
+          debit: paymentAmount, 
+          credit: 0, 
+          houseId: r.houseId 
+        },
+        { 
+          accountId: isHutang ? account.id : receivableAccountId, 
+          debit: 0, 
+          credit: paymentAmount, 
+          houseId: r.houseId 
+        }
+      ]);
+
+      addTransaction({
+        houseId: r.houseId,
+        date: today,
+        description: `[PELUNASAN] ${r.entityName} - ${notes || r.description}`,
+        qty: '1',
+        price: paymentAmount,
+        total: paymentAmount,
+        account: account.name,
+        type: isHutang ? 'EXPENSE' : 'INCOME',
+        category: 'Pelunasan', // Critical: Categorized as Pelunasan to avoid P&L double-counting
+        journalId
+      });
+    }
   };
 
   // Record a standalone operational expense with full journal entry
@@ -289,17 +340,35 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Realize sinking fund allocation — moves retained earnings to reserve fund
+  // Updated: Treated as an appropriation of profit (expense-like)
   const realizeSinkingFund = (amount: number, type: SinkingFundType, houseId?: string, notes?: string) => {
+    const today = new Date().toISOString().split('T')[0];
     const journalId = addJournalEntry(
-      { date: new Date().toISOString().split('T')[0], description: `Penyisihan Sinking Fund: ${type}`, reference: `SF-${Date.now()}` },
+      { date: today, description: `Alokasi Dana Peremajaan: ${type}`, reference: `SF-${Date.now()}` },
       [
-        { accountId: 'acc-modal', debit: amount, credit: 0, houseId },
-        { accountId: 'acc-sinking-fund', debit: 0, credit: amount, houseId },
+        { accountId: 'acc-beban-penyisihan', debit: amount, credit: 0, houseId }, // Reduces P&L
+        { accountId: 'acc-kas', debit: 0, credit: amount, houseId }, // Moves cash out of main
+        { accountId: 'acc-bank-cadangan', debit: amount, credit: 0, houseId }, // Moves cash into reserve
+        { accountId: 'acc-cadangan-ekuitas', debit: 0, credit: amount, houseId }, // Offsets the reserve asset
       ]
     );
+
+    addTransaction({
+      houseId,
+      date: today,
+      description: `[ALOKASI DANA] ${type} - ${notes || 'Penyisihan Keuntungan'}`,
+      qty: '1',
+      price: amount,
+      total: amount,
+      account: 'Kas -> Cadangan',
+      type: 'EXPENSE',
+      category: 'Pelunasan', // Categorized as Pelunasan/Transfer to avoid double P&L hit (since expense is already in journal)
+      journalId
+    });
+
     const allocation: SinkingFundAllocation = {
-      id: `sf-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
+      id: `sf-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      date: today,
       type,
       amount,
       notes,
@@ -365,7 +434,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   /** FIX #1 + #2 + #4: saveProduction now deducts feed, increments egg stock, and logs mortality */
   const saveProduction = (logData: Omit<ProductionLog, 'id'>) => {
-    const newLog = { ...logData, id: `prod-${Date.now()}` };
+    const newLog = { ...logData, id: `prod-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
     setProductionLogs(prev => [...prev, newLog]);
     
     // Sync to backend
@@ -401,6 +470,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           dueDate: new Date().toISOString().split('T')[0],
           status: 'OPEN',
           relatedTransactionId: newLog.id,
+          houseId: logData.houseId,
           paymentHistory: []
         });
 
@@ -414,6 +484,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           dueDate: new Date().toISOString().split('T')[0],
           status: 'OPEN',
           relatedTransactionId: newLog.id,
+          houseId: 'CENTRAL', // Piutang milik pusat
           paymentHistory: []
         });
 
@@ -453,7 +524,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             return prev.map(item => item.id === existing.id ? { ...item, quantity: item.quantity + count, houseId: logData.houseId } : item);
           } else {
             return [...prev, {
-              id: `inv-egg-${logData.houseId}-${category}-${Date.now()}`,
+              id: `inv-egg-${logData.houseId}-${category}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
               houseId: logData.houseId,
               name: `Stok Telur ${category}`,
               type: ItemType.EGG_STOCK,
@@ -488,7 +559,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // FIX #4: Save mortality record if applicable
     if (logData.mortality > 0) {
       const mortalityRecord: MortalityRecord = {
-        id: `mort-${Date.now()}`,
+        id: `mort-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         houseId: logData.houseId,
         date: logData.date,
         count: logData.mortality,
@@ -500,16 +571,29 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const saveSale = (saleData: Omit<SalesLog, 'id'>, targetAccountId?: string) => {
-    const newSale = { ...saleData, id: `sale-${Date.now()}` };
+    const newSale = { ...saleData, id: `sale-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
     setSalesLogs(prev => [...prev, newSale]);
 
     // Always deduct from inventory for both paid and free sales
-    setInventory(prev => prev.map(item => {
-      if (item.type === ItemType.EGG_STOCK && item.eggCategory === saleData.category && item.houseId === saleData.houseId) {
-        return { ...item, quantity: Math.max(0, item.quantity - saleData.quantity) };
+    let stockValid = true;
+    setInventory(prev => {
+      const item = prev.find(i => i.type === ItemType.EGG_STOCK && i.eggCategory === saleData.category && i.houseId === saleData.houseId);
+      if (item && item.quantity < saleData.quantity) {
+        stockValid = false;
+        return prev;
       }
-      return item;
-    }));
+      return prev.map(item => {
+        if (item.type === ItemType.EGG_STOCK && item.eggCategory === saleData.category && item.houseId === saleData.houseId) {
+          return { ...item, quantity: Math.max(0, item.quantity - saleData.quantity) };
+        }
+        return item;
+      });
+    });
+
+    if (!stockValid) {
+        console.error("Sale aborted: Insufficient stock.");
+        return;
+    }
 
     // Use house-specific kas account, fallback to any cash account
     const selectedAcc = accounts.find(a => a.id === targetAccountId)
@@ -588,18 +672,33 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const totalButir = logs.reduce((a, b) => a + b.totalButir, 0);
     const cumulativeFCR = totalButir > 0 ? totalFeed / totalButir : 0;
 
-    // Estimate feed cost from inventory lastPrice
+    // 1. Feed Cost (Consumed Feed * Unit Price)
     const totalFeedCost = logs.reduce((acc, log) => {
       const item = inventory.find(i => i.id === log.feedInventoryItemId);
-      return acc + (item ? log.feedConsumed * item.lastPrice : 0);
+      return acc + (item ? log.feedConsumed * (item.lastPrice || 0) : 0);
     }, 0);
 
-    const hppPerButir = totalButir > 0 ? totalFeedCost / totalButir : 0;
+    // 2. Operational Expenses (Labor, Utilities, Medication) from Transactions
+    const houseOpEx = transactions.filter(t => 
+      t.houseId === houseId && 
+      t.type === 'EXPENSE' && 
+      t.category !== 'Pelunasan' &&
+      t.category !== 'Persediaan'
+    );
+    const totalOtherDirectCosts = houseOpEx.reduce((acc, t) => acc + t.total, 0);
+    
+    // 3. Depreciation Reserves (Sinking Fund)
+    const houseSinkingFund = sinkingFundAllocations.filter(a => (a as any).houseId === houseId);
+    const totalSinkingFund = houseSinkingFund.reduce((acc, a) => acc + a.amount, 0);
+
+    // Total HPP = Feed + OpEx + Depreciation
+    const totalProductionCost = totalFeedCost + totalOtherDirectCosts + totalSinkingFund;
+    const hppPerButir = totalButir > 0 ? totalProductionCost / totalButir : 0;
 
     const totalIncome = salesLogs
       .filter(s => s.houseId === houseId && !s.isFree)
       .reduce((a, b) => a + b.total, 0);
-    const netPL = totalIncome - totalFeedCost;
+    const netPL = totalIncome - totalProductionCost;
 
     return {
       houseId,
@@ -607,7 +706,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       feedIntakePerBirdGrams: getFeedIntakePerBird(houseId, currentCount),
       hppPerButir,
       totalButir,
-      totalFeedCost,
+      totalFeedCost: totalProductionCost,
       netPL,
     };
   };

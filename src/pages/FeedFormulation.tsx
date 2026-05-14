@@ -10,11 +10,22 @@ import { cn } from '../lib/utils';
 import Modal from '../components/Modal';
 import { useGlobalData } from '../GlobalContext';
 import { useHouse } from '../HouseContext';
-import { FeedRecipe, RecipeIngredient, ItemType } from '../types';
+import { FeedRecipe, RecipeIngredient, ItemType, StockMutationType } from '../types';
 
 export default function FeedFormulation() {
     const { activeHouse } = useHouse();
-    const { inventory, updateInventory, recipes, addRecipe, updateRecipe, deleteRecipe } = useGlobalData();
+    const { 
+        inventory, 
+        updateInventory, 
+        updateInventoryItem,
+        addInventoryItem,
+        createStockMutation,
+        recipes, 
+        addRecipe, 
+        updateRecipe, 
+        deleteRecipe 
+    } = useGlobalData();
+
     const [selectedRecipeId, setSelectedRecipeId] = useState(recipes.length > 0 ? recipes[0].id : '');
     const [targetProductionKg, setTargetProductionKg] = useState<number>(1000);
     const [outputItemId, setOutputItemId] = useState('');
@@ -24,13 +35,36 @@ export default function FeedFormulation() {
     const [isEditingFormOpen, setIsEditingFormOpen] = useState(false);
     const [currentEditingRecipe, setCurrentEditingRecipe] = useState<FeedRecipe | null>(null);
 
-    // Finished feed items for output selector
-    const finishedFeedItems = useMemo(() =>
-        inventory.filter(i => i.type === ItemType.FINISHED_FEED && (!i.houseId || i.houseId === activeHouse?.id)), [inventory, activeHouse]);
+    // Auto-create 'Pakan Jadi Layer Mix' if missing and set as default
+    React.useEffect(() => {
+        const layerMix = inventory.find(i => i.name === 'Pakan Jadi Layer Mix' && i.type === ItemType.FINISHED_FEED);
+        if (!layerMix) {
+            addInventoryItem({
+                name: 'Pakan Jadi Layer Mix',
+                type: ItemType.FINISHED_FEED,
+                quantity: 0,
+                unit: 'kg',
+                reorderPoint: 500,
+                lastPrice: 0,
+                houseId: 'CENTRAL'
+            });
+        } else {
+            // Always ensure an output item is selected
+            // Default to recipe's specific output, otherwise Layer Mix
+            if (!outputItemId || !inventory.some(i => i.id === outputItemId)) {
+                setOutputItemId(activeRecipe?.outputInventoryItemId || layerMix.id);
+            }
+        }
+    }, [inventory, addInventoryItem, outputItemId]);
 
-    // Raw materials only for ingredient dropdown
+    // Finished feed items from central warehouse (Gudang Pusat)
+    const finishedFeedItems = useMemo(() =>
+        inventory.filter(i => i.type === ItemType.FINISHED_FEED && (!i.houseId || i.houseId === 'CENTRAL')), [inventory]);
+
+    // Raw materials only for ingredient dropdown (Exclude Finished Feed)
     const rawMaterialItems = useMemo(() =>
         inventory.filter(i => i.type === ItemType.RAW_MATERIAL && (!i.houseId || i.houseId === activeHouse?.id)), [inventory, activeHouse]);
+
 
     const activeRecipe = useMemo(() =>
         recipes.find(r => r.id === selectedRecipeId) || recipes[0],
@@ -105,11 +139,41 @@ export default function FeedFormulation() {
                 // 1. Deduct raw material stocks
                 formulationDetails.forEach(detail => {
                     updateInventory(detail.inventoryItemId, -detail.neededKg);
+                    createStockMutation({
+                        date: new Date().toISOString().split('T')[0],
+                        itemId: detail.inventoryItemId,
+                        type: StockMutationType.USAGE,
+                        quantity: detail.neededKg,
+                        unitCost: 0,
+                        sourceLocation: 'CENTRAL',
+                        reference: `MILLING-USAGE-${Date.now()}`,
+                        notes: `Bahan untuk Giling: ${activeRecipe?.name}`
+                    });
                 });
 
                 // 2. Increment the FINISHED_FEED item
                 if (effectiveOutputId) {
                     updateInventory(effectiveOutputId, targetProductionKg);
+                    
+                    // Calculate Unit Cost (HPP) of the mixed feed
+                    const totalIngredientCost = formulationDetails.reduce((acc, detail) => {
+                        const item = inventory.find(i => i.id === detail.inventoryItemId);
+                        return acc + (item ? detail.neededKg * item.lastPrice : 0);
+                    }, 0);
+                    const unitCost = targetProductionKg > 0 ? totalIngredientCost / targetProductionKg : 0;
+                    
+                    updateInventoryItem(effectiveOutputId, { lastPrice: unitCost });
+
+                    createStockMutation({
+                        date: new Date().toISOString().split('T')[0],
+                        itemId: effectiveOutputId,
+                        type: StockMutationType.PRODUCTION,
+                        quantity: targetProductionKg,
+                        unitCost: unitCost,
+                        sourceLocation: 'CENTRAL',
+                        reference: `MILLING-${Date.now()}`,
+                        notes: `Hasil Giling: ${activeRecipe?.name}`
+                    });
                 }
 
                 Swal.fire({
@@ -171,7 +235,7 @@ export default function FeedFormulation() {
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Output: Pakan Jadi Layer Mix</label>
                             <select
-                                value={outputItemId || activeRecipe?.outputInventoryItemId || finishedFeedItems[0]?.id || ''}
+                                value={outputItemId}
                                 onChange={(e) => setOutputItemId(e.target.value)}
                                 className="w-full bg-emerald-50 border border-emerald-200 rounded-sm px-4 py-3 text-sm font-bold text-emerald-800 focus:outline-none focus:border-emerald-400"
                             >
@@ -370,14 +434,15 @@ function RecipeForm({ recipe, onSave, onCancel }: RecipeFormProps) {
     const { inventory } = useGlobalData();
     const [name, setName] = useState(recipe?.name || '');
     const [targetFcr, setTargetFcr] = useState(recipe?.targetFcr || 0);
+    const rawMaterials = inventory.filter(i => i.type === ItemType.RAW_MATERIAL);
     const [ingredients, setIngredients] = useState<RecipeIngredient[]>(recipe?.ingredients || [
-        { inventoryItemId: inventory[0]?.id || '', percentage: 0 }
+        { inventoryItemId: rawMaterials[0]?.id || '', percentage: 0 }
     ]);
 
     const totalPercentage = ingredients.reduce((sum, ing) => sum + ing.percentage, 0);
 
     const handleAddIngredient = () => {
-        setIngredients([...ingredients, { inventoryItemId: inventory[0]?.id || '', percentage: 0 }]);
+        setIngredients([...ingredients, { inventoryItemId: rawMaterials[0]?.id || '', percentage: 0 }]);
     };
 
     const handleRemoveIngredient = (index: number) => {
@@ -460,7 +525,7 @@ function RecipeForm({ recipe, onSave, onCancel }: RecipeFormProps) {
                                 onChange={(e) => handleIngredientChange(idx, 'inventoryItemId', e.target.value)}
                                 className="flex-1 bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:border-amber-500"
                             >
-                                {inventory.map(item => (
+                                {rawMaterials.map(item => (
                                     <option key={item.id} value={item.id}>{item.name}</option>
                                 ))}
                             </select>

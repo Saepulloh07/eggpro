@@ -146,39 +146,39 @@ export default function Inventory() {
         }
 
 
-          const journalId = addJournalEntry(
-            { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang: ${newItem.name}`, reference: `BELI-${Date.now()}` },
-            [
-              { accountId: 'acc-persediaan-pakan', debit: totalCost, credit: 0, houseId: payingHouseId },
-              { accountId: finalAcc.id, debit: 0, credit: totalCost, houseId: payingHouseId }
-            ]
-          );
+        const journalId = addJournalEntry(
+          { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang: ${newItem.name}`, reference: `BELI-${Date.now()}` },
+          [
+            { accountId: 'acc-persediaan-pakan', debit: totalCost, credit: 0, houseId: payingHouseId },
+            { accountId: finalAcc.id, debit: 0, credit: totalCost, houseId: payingHouseId }
+          ]
+        );
 
-          addTransaction({
-            houseId: payingHouseId,
-            date: new Date().toISOString().split('T')[0],
-            description: `Pembelian Stok Gudang Pusat: ${newItem.name}`,
-            qty: `${newItem.quantity} ${newItem.unit}`,
-            price: newItem.price,
-            total: totalCost,
-            account: finalAcc.name,
-            type: 'ASSET', // IMPORTANT: Not an EXPENSE, so it doesn't skew P&L
-            category: 'Persediaan',
-            journalId
-          });
+        addTransaction({
+          houseId: payingHouseId,
+          date: new Date().toISOString().split('T')[0],
+          description: `Pembelian Stok Gudang Pusat: ${newItem.name}`,
+          qty: `${newItem.quantity} ${newItem.unit}`,
+          price: newItem.price,
+          total: totalCost,
+          account: finalAcc.name,
+          type: 'ASSET', // IMPORTANT: Not an EXPENSE, so it doesn't skew P&L
+          category: 'Persediaan',
+          journalId
+        });
 
-          createStockMutation({
-            date: new Date().toISOString().split('T')[0],
-            itemId: finalItemId,
-            type: StockMutationType.PURCHASE,
-            quantity: newItem.quantity,
-            unitCost: newItem.price,
-            sourceLocation: 'SUPPLIER',
-            targetLocation: 'CENTRAL',
-            paidByHouseId: payingHouseId,
-            reference: `BELI-${Date.now()}`,
-            notes: `Dibayar oleh Kandang — ${finalAcc.name}`
-          });
+        createStockMutation({
+          date: new Date().toISOString().split('T')[0],
+          itemId: finalItemId,
+          type: StockMutationType.PURCHASE,
+          quantity: newItem.quantity,
+          unitCost: newItem.price,
+          sourceLocation: 'SUPPLIER',
+          targetLocation: 'CENTRAL',
+          paidByHouseId: payingHouseId,
+          reference: `BELI-${Date.now()}`,
+          notes: `Dibayar oleh Kandang — ${finalAcc.name}`
+        });
 
         Swal.fire({
           title: 'Stok Ditambahkan!',
@@ -335,7 +335,7 @@ export default function Inventory() {
                     const balance = getHouseCashBalance(h.id);
                     return kasAcc ? (
                       <option key={kasId} value={`${kasId}|${h.id}`}>
-                        💰 {h.name} — {kasAcc.name} (Saldo: Rp {balance.toLocaleString('id-ID')})
+                        💰 {h.name} (Saldo: Rp {balance.toLocaleString('id-ID')})
                       </option>
                     ) : null;
                   })}

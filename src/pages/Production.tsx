@@ -28,8 +28,8 @@ function getStrainStandardHDP(ageWeeks: number): number {
 
 const MORTALITY_CAUSE_LABELS: Record<MortalityCause, string> = {
   [MortalityCause.DISEASE]: 'Penyakit / Infeksi',
-  [MortalityCause.CULLED]:  'Afkir (Dikeluarkan)',
-  [MortalityCause.OTHER]:   'Lainnya',
+  [MortalityCause.CULLED]: 'Afkir (Dikeluarkan)',
+  [MortalityCause.OTHER]: 'Lainnya',
 };
 
 export default function Production() {
@@ -52,7 +52,7 @@ export default function Production() {
   const [feedConsumed, setFeedConsumed] = useState(0);
   const [feedInventoryItemId, setFeedInventoryItemId] = useState('');
   const [discardedEggs, setDiscardedEggs] = useState(0);
-  
+
   const [breakdown, setBreakdown] = useState<Record<string, number>>({
     [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0,
     [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0,
@@ -68,19 +68,19 @@ export default function Production() {
   // Auto calculate weight in KG based on standard
   const eggWeight = useMemo(() => {
     let totalKg = 0;
-    // Remban: ~19.75 kg / 300
-    totalKg += (breakdown[EggCategory.BM] || 0) * (19.75 / 300);
-    // Bujang: ~18.75 kg / 300
-    totalKg += (breakdown[EggCategory.KRC] || 0) * (18.75 / 300);
-    // KS: ~17 kg / 300
-    totalKg += (breakdown[EggCategory.KS] || 0) * (17 / 300);
-    // Pelor: ~15 kg / 300
-    totalKg += (breakdown[EggCategory.PELOR] || 0) * (15 / 300);
+    // Remban: ~19.75 kg / 250
+    totalKg += (breakdown[EggCategory.BM] || 0) * (19.75 / 250);
+    // Bujang: ~18.75 kg / 250
+    totalKg += (breakdown[EggCategory.KRC] || 0) * (18.75 / 250);
+    // KS: ~17 kg / 250
+    totalKg += (breakdown[EggCategory.KS] || 0) * (17 / 250);
+    // Pelor: ~15 kg / 250
+    totalKg += (breakdown[EggCategory.PELOR] || 0) * (15 / 250);
     // Retak/Pecah/Bujang Retak/KS Retak: assume ~18 kg / 300
-    const others = (breakdown[EggCategory.RETAK] || 0) + 
-                   (breakdown[EggCategory.PECAH] || 0) + 
-                   (breakdown[EggCategory.KRC_RETAK] || 0) + 
-                   (breakdown[EggCategory.KS_RETAK] || 0);
+    const others = (breakdown[EggCategory.RETAK] || 0) +
+      (breakdown[EggCategory.PECAH] || 0) +
+      (breakdown[EggCategory.KRC_RETAK] || 0) +
+      (breakdown[EggCategory.KS_RETAK] || 0);
     totalKg += others * (18 / 300);
     return totalKg;
   }, [breakdown]);
@@ -228,8 +228,8 @@ export default function Production() {
 
   const houseProdLogs = useMemo(() => productionLogs
     .filter(l => l.houseId === activeHouse?.id)
-    .sort((a, b) => b.date.localeCompare(a.date)), 
-  [productionLogs, activeHouse]);
+    .sort((a, b) => b.date.localeCompare(a.date)),
+    [productionLogs, activeHouse]);
 
   const paginatedLogs = houseProdLogs.slice((historyPage - 1) * ITEMS_PER_PAGE, historyPage * ITEMS_PER_PAGE);
   const totalPages = Math.ceil(houseProdLogs.length / ITEMS_PER_PAGE) || 1;
@@ -276,31 +276,31 @@ export default function Production() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {paginatedLogs.map((log, i) => {
-                      const hdp = activeBatch && activeBatch.currentCount > 0
-                        ? ((log.eggCount / activeBatch.currentCount) * 100).toFixed(1)
-                        : '-';
-                      const logTotalButir = log.totalButir ?? (log as any).totalKg ?? 0;
-                      const fcr = logTotalButir > 0 ? (log.feedConsumed / logTotalButir).toFixed(2) : '-';
-                      return (
-                        <tr key={log.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                          <td className="px-3 py-3 font-bold whitespace-nowrap">{new Date(log.date).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' })}</td>
-                          <td className="px-3 py-3 whitespace-nowrap flex items-center gap-1 text-slate-500">
-                            <Clock size={10} />
-                            {log.inputTime ? new Date(log.inputTime).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) : '-'}
-                          </td>
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <span className="flex items-center gap-1 text-slate-600 font-bold"><UserIcon size={10} />{log.inputBy || '-'}</span>
-                          </td>
-                          <td className="px-3 py-3 font-bold text-slate-900">{log.totalButir.toLocaleString()}</td>
-                          <td className="px-3 py-3 font-bold text-emerald-600">{(log.eggWeight ?? 0).toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})} kg</td>
-                          <td className="px-3 py-3">{log.feedConsumed}</td>
-                          <td className="px-3 py-3 font-bold text-amber-600">{(log.feedConsumed / (log.eggWeight || 1)).toFixed(2)}</td>
-                          <td className="px-3 py-3 font-bold text-rose-500">{log.mortality > 0 ? log.mortality : '-'}</td>
-                          <td className="px-3 py-3 font-bold">{hdp}%</td>
-                          <td className="px-3 py-3 text-slate-400">{log.mortalityCause ? MORTALITY_CAUSE_LABELS[log.mortalityCause] : '-'}</td>
-                        </tr>
-                      );
-                    })}
+                    const hdp = activeBatch && activeBatch.currentCount > 0
+                      ? ((log.eggCount / activeBatch.currentCount) * 100).toFixed(1)
+                      : '-';
+                    const logTotalButir = log.totalButir ?? (log as any).totalKg ?? 0;
+                    const fcr = logTotalButir > 0 ? (log.feedConsumed / logTotalButir).toFixed(2) : '-';
+                    return (
+                      <tr key={log.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                        <td className="px-3 py-3 font-bold whitespace-nowrap">{new Date(log.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                        <td className="px-3 py-3 whitespace-nowrap flex items-center gap-1 text-slate-500">
+                          <Clock size={10} />
+                          {log.inputTime ? new Date(log.inputTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className="flex items-center gap-1 text-slate-600 font-bold"><UserIcon size={10} />{log.inputBy || '-'}</span>
+                        </td>
+                        <td className="px-3 py-3 font-bold text-slate-900">{log.totalButir.toLocaleString()}</td>
+                        <td className="px-3 py-3 font-bold text-emerald-600">{(log.eggWeight ?? 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kg</td>
+                        <td className="px-3 py-3">{log.feedConsumed}</td>
+                        <td className="px-3 py-3 font-bold text-amber-600">{(log.feedConsumed / (log.eggWeight || 1)).toFixed(2)}</td>
+                        <td className="px-3 py-3 font-bold text-rose-500">{log.mortality > 0 ? log.mortality : '-'}</td>
+                        <td className="px-3 py-3 font-bold">{hdp}%</td>
+                        <td className="px-3 py-3 text-slate-400">{log.mortalityCause ? MORTALITY_CAUSE_LABELS[log.mortalityCause] : '-'}</td>
+                      </tr>
+                    );
+                  })}
                   {houseProdLogs.length === 0 && (
                     <tr><td colSpan={10} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">Belum ada riwayat produksi</td></tr>
                   )}
@@ -365,7 +365,7 @@ export default function Production() {
               <label className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block mb-2">Total Berat Telur (kg) — Auto-kalkulasi</label>
               <input type="number" readOnly value={eggWeight.toFixed(2)}
                 className="w-full bg-amber-100/50 border border-amber-300 rounded-sm px-4 py-3 text-sm font-black text-amber-900 focus:outline-none" />
-              <p className="text-[9px] text-amber-600 mt-2 leading-relaxed">Berat dikalkulasi otomatis dari standar bobot per peti (300 butir): Remban (19.75kg), Bujang (18.75kg), KS (17kg), Pelor (15kg).</p>
+              <p className="text-[9px] text-amber-600 mt-2 leading-relaxed">Berat dikalkulasi otomatis dari standar bobot per peti (250 butir): Remban (19.75kg), Bujang (18.75kg), KS (17kg), Pelor (15kg).</p>
             </div>
 
             {/* FIX #1: Feed Selector */}
@@ -421,17 +421,17 @@ export default function Production() {
             </div>
 
             {isAbnormalHigh && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-rose-50 border border-rose-200 p-4 mb-6">
-                    <div className="flex items-center gap-2 mb-1">
-                        <AlertTriangle size={16} className="text-rose-600" />
-                        <h4 className="text-rose-800 font-bold text-sm uppercase tracking-tight">Peringatan: Abnormalitas Tinggi</h4>
-                    </div>
-                    <p className="text-rose-600 text-xs">
-                        Tingkat telur pecah/abnormal mencapai <b>{abnormalRatio.toFixed(1)}%</b>. 
-                        Batas toleransi adalah <b>{farmSettings.abnormalEggTolerancePct || 2}%</b>. 
-                        Periksa nutrisi pakan atau stres pada ayam.
-                    </p>
-                </motion.div>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-rose-50 border border-rose-200 p-4 mb-6">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertTriangle size={16} className="text-rose-600" />
+                  <h4 className="text-rose-800 font-bold text-sm uppercase tracking-tight">Peringatan: Abnormalitas Tinggi</h4>
+                </div>
+                <p className="text-rose-600 text-xs">
+                  Tingkat telur pecah/abnormal mencapai <b>{abnormalRatio.toFixed(1)}%</b>.
+                  Batas toleransi adalah <b>{farmSettings.abnormalEggTolerancePct || 2}%</b>.
+                  Periksa nutrisi pakan atau stres pada ayam.
+                </p>
+              </motion.div>
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">

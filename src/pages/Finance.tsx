@@ -5,45 +5,12 @@
 
 import React, { useState, useMemo } from 'react';
 import {
-    Wallet,
-    Plus,
-    ArrowUpRight,
-    ArrowDownRight,
-    FileText,
-    Calendar,
-    Layers,
-    Upload,
-    Camera,
-    Download,
-    Save,
-    BookOpen,
-    Receipt,
-    ShoppingCart,
-    Edit2,
-    ChevronLeft,
-    ChevronRight,
-    Egg,
-    Coins,
-    ClipboardList,
-    Building2,
-    BookCopy,
-    BarChart3,
-    Scale,
-    TrendingUp,
-    TrendingDown,
-    CircleDollarSign,
-    LayoutDashboard,
-    Zap,
-    Banknote,
-    RefreshCw,
-    Bird,
-    Home,
-    PiggyBank,
-    BarChart2,
-    Calculator,
-    AlertTriangle,
-    CheckCircle,
-    XCircle
+    Wallet, Plus, ArrowUpRight, ArrowDownRight, FileText, Calendar, Layers,
+    Upload, Camera, Download, Save, BookOpen, Receipt, ShoppingCart, Edit2,
+    ChevronLeft, ChevronRight, Egg, Coins, ClipboardList, Building2, BookCopy,
+    BarChart3, Scale, TrendingUp, TrendingDown, CircleDollarSign, LayoutDashboard,
+    Zap, Banknote, RefreshCw, Bird, Home, PiggyBank, BarChart2, Calculator,
+    AlertTriangle, CheckCircle, XCircle
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -60,7 +27,7 @@ import { EggCategory, Asset, AccountCategory, ExpenseCategory, SinkingFundType }
 export default function Finance() {
     const { activeHouse, houses } = useHouse();
     const { getActiveFlockByHouse } = useFlock();
-    const { productionLogs, salesLogs, transactions, addModalAwal, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction, journalEntries, journalLines, apArRecords, accounts, addAPARRecord, updateAPARRecord, addOperationalExpenseRecord, operationalExpenses, sinkingFundAllocations, realizeSinkingFund, getTrialBalance, getAccountBalance } = useGlobalData();
+    const { productionLogs, salesLogs, transactions, addModalAwal, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction, journalEntries, journalLines, apArRecords, accounts, addAPARRecord, updateAPARRecord, addOperationalExpenseRecord, operationalExpenses, sinkingFundAllocations, realizeSinkingFund, getTrialBalance, getAccountBalance, inventory } = useGlobalData();
 
     const [activeTab, setActiveTab] = useState<'BUKU_TELUR' | 'BUKU_TRANSAKSI' | 'ASET' | 'AKUNTANSI' | 'PENGELUARAN' | 'BUKU_BESAR' | 'NERACA_SALDO'>('BUKU_TELUR');
     const [isOpexModalOpen, setIsOpexModalOpen] = useState(false);
@@ -74,6 +41,9 @@ export default function Finance() {
     const [editingModal, setEditingModal] = useState<any | null>(null);
     const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
     const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
+    const [selectedApArId, setSelectedApArId] = useState<string | null>(null);
+    const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+
 
     // Pagination State
     const [prodPage, setProdPage] = useState(1);
@@ -81,54 +51,53 @@ export default function Finance() {
     const ITEMS_PER_PAGE = 10;
 
     // HPP Calculator State
-    const [hppMarginPct, setHppMarginPct] = useState(25); // margin keuntungan default 25%
-    const [hppCadangan, setHppCadangan] = useState(0);    // cadangan risiko (manual input)
+    const [hppMarginPct, setHppMarginPct] = useState(25);
+    const [hppCadangan, setHppCadangan] = useState(0);
 
     // --- Filtering Data based on Scope ---
     const isKonsolidasi = !activeHouse;
     const filteredProdLogs = isKonsolidasi ? productionLogs : productionLogs.filter(p => p.houseId === activeHouse?.id);
     const filteredSalesLogs = isKonsolidasi ? salesLogs : salesLogs.filter(s => s.houseId === activeHouse?.id);
 
-    // Transaksi dipisah per kandang atau semua
     const houseTransactions = isKonsolidasi ? transactions : transactions.filter(t => t.houseId === activeHouse?.id);
-    const expenseTransactions = houseTransactions.filter(t => t.type === 'EXPENSE');
-    const incomeTransactions = houseTransactions.filter(t => t.type === 'INCOME');
+
+    // AKUNTANSI FIX 1: Memisahkan Belanja Modal (CapEx) dan Pelunasan dari Beban Operasional (OpEx)
+    const expenseTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && t.category !== 'Aset Tetap' && t.category !== 'Pelunasan');
+    const capexTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && t.category === 'Aset Tetap');
+    const pelunasanExpenses = houseTransactions.filter(t => t.type === 'EXPENSE' && t.category === 'Pelunasan');
+
+    const incomeTransactions = houseTransactions.filter(t => t.type === 'INCOME' && t.category !== 'Pelunasan');
+    const pelunasanIncome = houseTransactions.filter(t => t.type === 'INCOME' && t.category === 'Pelunasan');
     const modalTransactions = houseTransactions.filter(t => t.type === 'MODAL');
 
     const houseAssets = isKonsolidasi ? assets : assets.filter(a => a.houseId === activeHouse?.id);
 
-    // For BUKU_TRANSAKSI - separate into 3 ledgers
-    const salesTransactions = houseTransactions.filter(t => t.type === 'INCOME' && (t.category === 'Penjualan' || t.category === 'Free Goods' || t.category === 'Penjualan Afkir'));
-    const bahanTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && (
+    // For BUKU_TRANSAKSI - separate into ledgers
+    const salesTransactions = houseTransactions.filter(t => t.type === 'INCOME' && (t.category === 'Penjualan' || t.category === 'Penjualan Afkir'));
+    const bahanTransactions = expenseTransactions.filter(t =>
         t.category === 'Pembelian DOC' ||
         t.description.toLowerCase().includes('stok') ||
         t.description.toLowerCase().includes('pakan') ||
-        t.description.toLowerCase().includes('bahan') ||
-        t.description.toLowerCase().includes('beli stok') ||
-        t.description.toLowerCase().includes('pembelian stok')
-    ));
-    const operasionalTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && !bahanTransactions.find(b => b.id === t.id));
-
+        t.description.toLowerCase().includes('bahan')
+    );
+    const operasionalTransactions = expenseTransactions.filter(t => !bahanTransactions.find(b => b.id === t.id));
 
     // --- Total Calculations ---
     const totalProduction = filteredProdLogs.reduce((acc, curr) => acc + (curr.totalButir ?? (curr as any).totalKg ?? 0), 0);
     const totalSalesTelur = filteredSalesLogs.reduce((acc, curr) => acc + curr.total, 0);
+
+    // AKUNTANSI FIX 2: Total Expenses murni dari OpEx & HPP (tidak termasuk Aset)
     const totalExpenses = expenseTransactions.reduce((acc, curr) => acc + curr.total, 0);
     const totalIncome = incomeTransactions.reduce((acc, curr) => acc + curr.total, 0);
     const totalModalAwal = modalTransactions.reduce((acc, curr) => acc + curr.total, 0);
 
-    // Accounting Logic
-    const totalAllRevenue = totalIncome; // totalIncome includes sales (auto-added to transactions)
-    const netProfit = totalAllRevenue - totalExpenses;
+    const netProfit = totalIncome - totalExpenses;
     const currentCapital = totalModalAwal + netProfit;
 
     const activeFlock = getActiveFlockByHouse(activeHouse?.id || '');
     const currentPopulation = activeFlock?.currentCount || 0;
 
-    const sinkingFundAmount = netProfit > 0 ? netProfit * ((farmSettings.sinkingFundPct || 10) / 100) : 0;
-    const netProfitAfterFund = netProfit > 0 ? netProfit - sinkingFundAmount : netProfit;
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Egg Categorization Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ──────────────── Egg Categorization Helpers ────────────────
     const getNormalButir = (log: typeof filteredProdLogs[0]) =>
         (log.breakdown[EggCategory.BM] || 0) +
         (log.breakdown[EggCategory.KRC] || 0) +
@@ -161,7 +130,6 @@ export default function Finance() {
     const totalRetakSold = filteredProdLogs.reduce((a, b) => a + getSoldByDate(b.date, 'RETAK', false), 0);
     const totalRetakFree = filteredProdLogs.reduce((a, b) => a + getSoldByDate(b.date, 'RETAK', true), 0);
 
-    // Calculate daily balance flow
     const productionWithBalance = useMemo(() => {
         const sortedLogs = [...filteredProdLogs].sort((a, b) => a.date.localeCompare(b.date));
         let runningBalance = 0;
@@ -179,7 +147,7 @@ export default function Finance() {
             const closing = runningBalance;
 
             return { ...log, opening, closing, totalOut, soldN, freeN, soldR, freeR, waste };
-        }).reverse(); // Latest first for display
+        }).reverse();
     }, [filteredProdLogs, filteredSalesLogs]);
 
     const paginatedBalanceLogs = productionWithBalance.slice((prodPage - 1) * ITEMS_PER_PAGE, prodPage * ITEMS_PER_PAGE);
@@ -192,7 +160,7 @@ export default function Finance() {
         const salvageValue = asset.salvageValue || 0;
         const depreciableAmount = asset.purchasePrice - salvageValue;
 
-        // Garis Lurus: (Harga Beli - Nilai Sisa) / Umur Ekonomis
+        // Garis Lurus
         const totalDepreciation = (depreciableAmount / (asset.expectedLifeYears * 12)) * Math.max(0, diffMonths);
         return Math.min(depreciableAmount, totalDepreciation);
     };
@@ -223,27 +191,15 @@ export default function Finance() {
 
         if (editingAsset) {
             updateAsset(editingAsset.id, {
-                name,
-                category,
-                purchasePrice,
-                salvageValue,
-                purchaseDate,
-                expectedLifeYears,
+                name, category, purchasePrice, salvageValue, purchaseDate, expectedLifeYears,
             });
             Swal.fire({ title: 'Berhasil!', text: 'Aset telah diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
         } else {
             addAsset({
-                houseId: activeHouse?.id || '',
-                name,
-                category,
-                purchasePrice,
-                salvageValue,
-                purchaseDate,
-                expectedLifeYears,
-                condition: 'BAIK'
+                houseId: activeHouse?.id || '', name, category, purchasePrice, salvageValue, purchaseDate, expectedLifeYears, condition: 'BAIK'
             });
 
-            // Hanya catat ke buku kas jika jenis perolehan adalah BELI (bukan Milik Pribadi)
+            // AKUNTANSI FIX 3: Kategori dibuat spesifik agar bisa di-filter keluar dari Opex
             if (assetOwnershipType === 'BELI') {
                 const accountId = formData.get('accountId') as string;
                 const selectedAcc = accounts.find(a => a.id === accountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
@@ -257,11 +213,11 @@ export default function Finance() {
                     total: purchasePrice,
                     account: selectedAcc.name,
                     type: 'EXPENSE',
-                    category: 'Aset'
+                    category: 'Aset Tetap' // Diganti agar tidak masuk ke Laba Rugi Operasional
                 });
-                Swal.fire({ title: 'Berhasil!', text: 'Aset telah didaftarkan dan tercatat sebagai pengeluaran di Buku Kas.', icon: 'success', confirmButtonColor: '#0f172a' });
+                Swal.fire({ title: 'Berhasil!', text: 'Aset telah didaftarkan dan tercatat di Buku Kas (sebagai CapEx).', icon: 'success', confirmButtonColor: '#0f172a' });
             } else {
-                Swal.fire({ title: 'Berhasil!', text: 'Aset (Milik Pribadi) telah didaftarkan. Tidak dicatat sebagai pembelian di Buku Kas.', icon: 'success', confirmButtonColor: '#0f172a' });
+                Swal.fire({ title: 'Berhasil!', text: 'Aset (Milik Pribadi) telah didaftarkan.', icon: 'success', confirmButtonColor: '#0f172a' });
             }
         }
 
@@ -303,7 +259,7 @@ export default function Finance() {
         };
         const formatIDR = '#,##0';
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET 1: BUKU TELUR Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+        // ── SHEET 1: BUKU TELUR ──
         const s1 = wb.addWorksheet('BUKU TELUR');
         s1.columns = [8, 12, 12, 12, 12, 12, 12, 12, 12, 14, 10, 14].map(w => ({ width: w }));
         addSheetTitle(s1, 'BUKU PRODUKSI TELUR', `Populasi: ${currentPopulation.toLocaleString()} ekor · Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 12);
@@ -331,7 +287,6 @@ export default function Finance() {
             cell.font = { bold: true };
         });
 
-        // Helper: build a transaction sheet
         const buildTxSheet = (name: string, title: string, subtitle: string, txList: typeof houseTransactions, headerBg: string) => {
             const ws = wb.addWorksheet(name);
             ws.columns = [6, 14, 32, 14, 18, 18, 14, 20].map(w => ({ width: w }));
@@ -368,7 +323,7 @@ export default function Finance() {
         const totalBahan = buildTxSheet('PENGELUARAN BAHAN', 'BUKU PENGELUARAN BAHAN', `Pembelian Pakan, Obat & Bahan Baku · ${new Date().toLocaleDateString('id-ID')}`, bahanTransactions, AMBER_BG);
         const totalOperasional = buildTxSheet('PENGELUARAN OPERASIONAL', 'BUKU PENGELUARAN OPERASIONAL', `Gaji, Aset & Biaya Tetap · ${new Date().toLocaleDateString('id-ID')}`, operasionalTransactions, ROSE_BG);
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET: MODAL MASUK Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+        // ── SHEET: MODAL MASUK ──
         const sm = wb.addWorksheet('MODAL MASUK');
         sm.columns = [6, 30, 20, 14].map(w => ({ width: w }));
         addSheetTitle(sm, 'RINCIAN MODAL MASUK', `Total Modal: Rp ${totalModalAwal.toLocaleString('id-ID')}`, 4);
@@ -382,38 +337,49 @@ export default function Finance() {
             sm.getCell(r, 3).numFmt = formatIDR;
         });
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET: LAPORAN LABA RUGI Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+        // ── SHEET: LAPORAN LABA RUGI (AKUNTANSI FIX 4: Struktur Laba Kotor & Bersih) ──
         const sl = wb.addWorksheet('LABA RUGI');
         sl.columns = [35, 22].map(w => ({ width: w }));
         addSheetTitle(sl, 'LAPORAN LABA RUGI', `Periode s/d ${new Date().toLocaleDateString('id-ID')} · ${activeHouse?.name || 'Semua Kandang'}`, 2);
-        const labaData: [string, number, boolean][] = [
-            ['PENDAPATAN', '', false] as any,
+
+        const labaKotor = totalIncome - totalBahan;
+
+        const labaData: [string, number | string, boolean][] = [
+            ['PENDAPATAN', '', false],
             ['  Penjualan Telur', totalPenjualan, false],
             ['  Lain-lain (Pendapatan Lainnya)', totalIncome - totalPenjualan > 0 ? totalIncome - totalPenjualan : 0, false],
             ['TOTAL PENDAPATAN', totalIncome, true],
-            ['', '', false] as any,
-            ['BEBAN & PENGELUARAN', '', false] as any,
-            ['  Beban Bahan & Stok', totalBahan, false],
+            ['', '', false],
+            ['HARGA POKOK PRODUKSI (HPP)', '', false],
+            ['  Beban Bahan Baku & Pakan', totalBahan, false],
+            ['LABA KOTOR (GROSS PROFIT)', labaKotor, true],
+            ['', '', false],
+            ['BEBAN OPERASIONAL (OPEX)', '', false],
             ['  Beban Operasional & Gaji', totalOperasional, false],
-            ['TOTAL BEBAN', totalBahan + totalOperasional, true],
-            ['', '', false] as any,
+            ['TOTAL BEBAN OPERASIONAL', totalOperasional, true],
+            ['', '', false],
             ['LABA / (RUGI) BERSIH', netProfit, true],
             ['Modal Awal (Ekuitas)', totalModalAwal, false],
             ['MODAL AKHIR (EKUITAS)', currentCapital, true],
         ];
+
         labaData.forEach(([label, value, isBold], i) => {
             const r = 4 + i;
             const la = sl.getCell(r, 1); const va = sl.getCell(r, 2);
             la.value = label; va.value = typeof value === 'number' ? value : '';
             if (typeof value === 'number') va.numFmt = formatIDR;
             if (isBold) { la.font = { bold: true, size: 10 }; va.font = { bold: true, size: 10 }; }
+
+            if (label === 'LABA KOTOR (GROSS PROFIT)') {
+                [la, va].forEach(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }; c.font = { bold: true }; });
+            }
             if (label === 'LABA / (RUGI) BERSIH') {
                 [la, va].forEach(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: netProfit >= 0 ? LIGHT_GREEN : LIGHT_ROSE } }; c.font = { bold: true, size: 12 }; });
             }
             sl.getRow(r).height = 18;
         });
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ SHEET 5: ASET & PENYUSUTAN Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+        // ── SHEET 5: ASET & PENYUSUTAN ──
         const s4 = wb.addWorksheet('ASET');
         s4.columns = [6, 28, 20, 14, 18, 12, 18, 18].map(w => ({ width: w }));
         addSheetTitle(s4, 'DAFTAR ASET & PENYUSUTAN', `Metode: Garis Lurus · ${new Date().toLocaleDateString('id-ID')}`, 8);
@@ -427,7 +393,7 @@ export default function Finance() {
             [5, 7, 8].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
         });
 
-        // ── SHEET: BUKU KAS UMUM ──────────────────────────────────────────────────────
+        // ── SHEET: BUKU KAS UMUM ──
         const skbu = wb.addWorksheet('BUKU KAS UMUM');
         skbu.columns = [6, 14, 40, 14, 18, 18, 20].map(w => ({ width: w }));
         addSheetTitle(skbu, 'BUKU KAS UMUM', `Kandang: ${activeHouse?.name || 'Semua'} · Dicetak: ${new Date().toLocaleDateString('id-ID')}`, 7);
@@ -457,7 +423,7 @@ export default function Finance() {
             c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
         });
 
-        // ── SHEET: HUTANG & PIUTANG (AP/AR) ──────────────────────────────────────────
+        // ── SHEET: HUTANG & PIUTANG (AP/AR) ──
         const houseApAr = apArRecords.filter(r => !activeHouse || r.houseId === activeHouse.id || !r.houseId);
         const sapar = wb.addWorksheet('HUTANG & PIUTANG');
         sapar.columns = [8, 14, 28, 20, 18, 18, 12].map(w => ({ width: w }));
@@ -470,7 +436,6 @@ export default function Finance() {
             sapar.getRow(row).values = [i + 1, r.dueDate ? new Date(r.dueDate).toLocaleDateString('id-ID') : '-', r.entityName, r.description || '-', r.amount, r.remainingAmount, r.status];
             [1, 2, 3, 4, 5, 6, 7].forEach(ci => styleData(sapar.getCell(row, ci), even));
             [5, 6].forEach(ci => { sapar.getCell(row, ci).numFmt = formatIDR; });
-            // Color HUTANG red, PIUTANG green
             const isHutang = (r as any).type === 'HUTANG';
             sapar.getCell(row, 5).font = { bold: true, color: { argb: isHutang ? 'FF9F1239' : 'FF065F46' } };
             sapar.getRow(row).height = 16;
@@ -479,7 +444,6 @@ export default function Finance() {
         const buffer = await wb.xlsx.writeBuffer();
         saveAs(new Blob([buffer]), `Laporan_Keuangan_${activeHouse?.name || 'Farm'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
-
 
     const handleAddModalSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -552,7 +516,6 @@ export default function Finance() {
         );
     };
 
-    // Tab config with icons & labels
     const TABS = [
         { id: 'BUKU_TELUR', label: 'Buku Telur', Icon: Egg, short: 'Telur' },
         { id: 'BUKU_TRANSAKSI', label: 'Buku Kas', Icon: Coins, short: 'Kas' },
@@ -566,7 +529,6 @@ export default function Finance() {
     return (
         <>
             <div className="pb-24 md:pb-8 space-y-0">
-                {/* Ã¢â€â‚¬Ã¢â€â‚¬ HEADER Ã¢â€â‚¬Ã¢â€â‚¬ */}
                 <div className="bg-white border-b border-slate-200 px-4 md:px-6 py-4 sticky top-0 z-30 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                         <div>
@@ -574,7 +536,6 @@ export default function Finance() {
                             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest hidden md:block">Manajemen keuangan sesuai standar akuntansi peternakan</p>
                         </div>
                         <div className="flex items-center gap-2">
-                            {/* Quick actions */}
                             <button onClick={() => setIsOpexModalOpen(true)}
                                 className="hidden md:flex items-center gap-1.5 bg-amber-500 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-amber-600 transition-all shadow-sm">
                                 <span>+</span> Biaya Harian
@@ -586,11 +547,10 @@ export default function Finance() {
                         </div>
                     </div>
 
-                    {/* Ã¢â€â‚¬Ã¢â€â‚¬ KPI SUMMARY CARDS Ã¢â€â‚¬Ã¢â€â‚¬ */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
                         {[
                             { label: 'Total Pemasukan', val: formatCurrency(totalIncome), color: 'text-emerald-600', bg: 'bg-emerald-50', Icon: TrendingUp },
-                            { label: 'Total Pengeluaran', val: formatCurrency(totalExpenses), color: 'text-rose-600', bg: 'bg-rose-50', Icon: TrendingDown },
+                            { label: 'Total Pengeluaran (Non-Aset)', val: formatCurrency(totalExpenses), color: 'text-rose-600', bg: 'bg-rose-50', Icon: TrendingDown },
                             { label: 'Laba / Rugi Bersih', val: (netProfit >= 0 ? '+' : '') + formatCurrency(netProfit), color: netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700', bg: netProfit >= 0 ? 'bg-emerald-100' : 'bg-rose-100', Icon: netProfit >= 0 ? CheckCircle : XCircle },
                             { label: 'Modal Akhir', val: formatCurrency(currentCapital), color: 'text-amber-700', bg: 'bg-amber-50', Icon: CircleDollarSign },
                         ].map(kpi => (
@@ -604,7 +564,6 @@ export default function Finance() {
                         ))}
                     </div>
 
-                    {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB NAVIGATION (Desktop: horizontal, under header) Ã¢â€â‚¬Ã¢â€â‚¬ */}
                     <div className="hidden md:flex mt-4 gap-1 overflow-x-auto pb-0.5">
                         {TABS.map(tab => (
                             <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
@@ -621,7 +580,6 @@ export default function Finance() {
                     </div>
                 </div>
 
-                {/* Ã¢â€â‚¬Ã¢â€â‚¬ MOBILE BOTTOM TAB BAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
                 <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-2xl">
                     <div className="flex overflow-x-auto">
                         {TABS.map(tab => (
@@ -638,14 +596,10 @@ export default function Finance() {
                     </div>
                 </div>
 
-                {/* Ã¢â€â‚¬Ã¢â€â‚¬ MAIN CONTENT AREA Ã¢â€â‚¬Ã¢â€â‚¬ */}
                 <div className="p-4 md:p-6">
                     <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ SIDEBAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
                         <div className="xl:col-span-1">
-                            {/* Mobile: horizontal scroll card row */}
                             <div className="flex xl:flex-col gap-3 overflow-x-auto pb-2 xl:pb-0">
-                                {/* Equity Card */}
                                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 min-w-[200px] xl:min-w-0 flex-shrink-0 xl:flex-shrink">
                                     <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><Wallet size={11} /> Ringkasan Ekuitas</p>
                                     <div className="space-y-2">
@@ -663,14 +617,11 @@ export default function Finance() {
                                         </div>
                                     </div>
                                 </div>
-                                {/* Renovation Recommendation Card */}
+
                                 {(() => {
-                                    // --- Kalkulasi Alokasi Peremajaan ---
-                                    // Rumus: Alokasi Bulanan = (Nilai Aset - Nilai Sisa) / (Umur Ekonomis * 12)
                                     const cageMonthly = (farmSettings.cageValueTotal - farmSettings.cageSalvageValue) / (farmSettings.cageLifeYears * 12);
                                     const layerMonthly = (farmSettings.layerValueTotal - farmSettings.layerSalvageValue) / (farmSettings.layerLifeYears * 12);
 
-                                    // Akumulasi penyusutan sejak pembelian (berdasarkan tanggal flock aktif)
                                     const activeFlock2 = getActiveFlockByHouse(activeHouse?.id || '');
                                     const flockAgeMonths = activeFlock2
                                         ? Math.max(0, (new Date().getFullYear() - new Date(activeFlock2.arrivalDate).getFullYear()) * 12
@@ -680,7 +631,6 @@ export default function Finance() {
                                     const layerRemainingMonths = Math.max(0, layerEconomicMonths - flockAgeMonths);
                                     const layerPctDepleted = Math.min(100, (flockAgeMonths / layerEconomicMonths) * 100);
 
-                                    // Dana yang sudah terakumulasi (dari sinkingFundAllocations)
                                     const totalFundSaved = sinkingFundAllocations.reduce((s, a) => s + a.amount, 0);
                                     const targetLayerFund = farmSettings.layerValueTotal - farmSettings.layerSalvageValue;
                                     const targetCageFund = farmSettings.cageValueTotal - farmSettings.cageSalvageValue;
@@ -689,8 +639,6 @@ export default function Finance() {
                                     return (
                                         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 min-w-[200px] xl:min-w-0 flex-shrink-0 xl:flex-shrink space-y-4">
                                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><RefreshCw size={11} /> Rekomendasi Peremajaan</p>
-
-                                            {/* Peremajaan Ayam */}
                                             <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg">
                                                 <div className="flex justify-between items-center mb-1">
                                                     <p className="text-[9px] font-black uppercase text-amber-700 flex items-center gap-1"><Bird size={11} /> Ayam Layer</p>
@@ -709,7 +657,6 @@ export default function Finance() {
                                                 </div>
                                             </div>
 
-                                            {/* Peremajaan Kandang */}
                                             <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
                                                 <p className="text-[9px] font-black uppercase text-slate-600 mb-1 flex items-center gap-1"><Home size={11} /> Kandang &amp; Bangunan</p>
                                                 <div className="flex justify-between text-[9px]">
@@ -722,7 +669,6 @@ export default function Finance() {
                                                 </div>
                                             </div>
 
-                                            {/* Progress Dana */}
                                             <div className="pt-2 border-t border-slate-100">
                                                 <div className="flex justify-between text-[9px] mb-1">
                                                     <span className="text-slate-400 font-bold uppercase">Dana Terkumpul</span>
@@ -739,7 +685,6 @@ export default function Finance() {
                                         </div>
                                     );
                                 })()}
-                                {/* Quick Action Buttons */}
                                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 min-w-[180px] xl:min-w-0 flex-shrink-0 xl:flex-shrink space-y-2">
                                     <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><Zap size={11} /> Aksi Cepat</p>
                                     <button onClick={() => { setEditingModal(null); setIsModalAwalOpen(true); }}
@@ -758,7 +703,6 @@ export default function Finance() {
                             </div>
                         </div>
 
-                        {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB CONTENT AREA Ã¢â€â‚¬Ã¢â€â‚¬ */}
                         <div className="xl:col-span-3 space-y-4">
                             {activeTab === 'BUKU_TELUR' && (
                                 <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
@@ -791,12 +735,10 @@ export default function Finance() {
                                                         <td className="px-3 py-3 font-bold bg-slate-50/50">{new Date(row.date).toLocaleDateString('id-ID')}</td>
                                                         <td className="px-3 py-3 font-mono text-slate-400">{row.opening.toLocaleString()}</td>
 
-                                                        {/* MASUK */}
                                                         <td className="px-2 py-3 font-bold text-emerald-600">{getNormalButir(row).toLocaleString()}</td>
                                                         <td className="px-2 py-3 text-emerald-500">{(row.breakdown[EggCategory.RETAK] || 0).toLocaleString()}</td>
                                                         <td className="px-2 py-3 text-emerald-400">{(row.breakdown[EggCategory.PECAH] || 0).toLocaleString()}</td>
 
-                                                        {/* KELUAR */}
                                                         <td className="px-2 py-3 text-amber-600 font-bold">{(row.soldN + row.soldR + row.freeN + row.freeR).toLocaleString()}</td>
                                                         <td className="px-2 py-3 text-rose-400">{row.waste || '-'}</td>
 
@@ -832,89 +774,74 @@ export default function Finance() {
                                 </div>
                             )}
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ HPP TELUR PANEL Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             {activeTab === 'BUKU_TELUR' && (() => {
-                                // ============================================================
-                                // RUMUS HPP (Harga Pokok Produksi) TELUR PER BUTIR
-                                // HPP/butir = (Total Biaya Produksi) / (Total Telur Diproduksi)
-                                // Komponen biaya:
-                                //   1. Biaya Pakan, 2. TK, 3. Susut Ayam, 4. Susut Kandang, 5. Ops, 6. Cadangan
+                                // AKUNTANSI FIX 5: Rumus HPP Profesional (DM + DL + FOH)
                                 const totalButirProduksi = filteredProdLogs.reduce((s, l) => s + (l.totalButir ?? 0), 0);
-                                const totalFeedConsumedKg = filteredProdLogs.reduce((s, l) => s + (l.feedConsumed || 0), 0);
+                                
+                                // 1. Direct Material: Biaya Pakan (Berdasarkan Konsumsi, bukan Pembelian)
+                                const totalBiayaPakanKonsumsi = filteredProdLogs.reduce((acc, log) => {
+                                    const item = inventory.find(i => i.id === log.feedInventoryItemId);
+                                    return acc + (item ? log.feedConsumed * (item.lastPrice || 0) : 0);
+                                }, 0);
+                                const biayaPakanPerButir = totalButirProduksi > 0 ? totalBiayaPakanKonsumsi / totalButirProduksi : 0;
 
-                                // Harga pakan aktual (weighted avg dari transaksi bahan)
-                                const feedCostTotal = bahanTransactions.reduce((s, t) => s + t.total, 0);
-                                const hargaPakanPerKg = totalFeedConsumedKg > 0 ? feedCostTotal / totalFeedConsumedKg : 0;
+                                // 2. Direct Labor: Biaya Tenaga Kerja (Gaji & Borongan)
+                                const totalGaji = houseTransactions
+                                    .filter(t => t.type === 'EXPENSE' && (t.category === 'Tenaga Kerja' || t.category === 'Payroll' || t.description.toLowerCase().includes('gaji')))
+                                    .reduce((s, t) => s + t.total, 0);
+                                const biayaTKPerButir = totalButirProduksi > 0 ? totalGaji / totalButirProduksi : 0;
 
+                                // 3. Factory Overhead (FOH): Operasional (Listrik, Vaksin, Air, dsb)
+                                const totalFOH = houseTransactions
+                                    .filter(t => 
+                                        t.type === 'EXPENSE' && 
+                                        t.category !== 'Pelunasan' && 
+                                        t.category !== 'Aset Tetap' && 
+                                        t.category !== 'Persediaan' && // Inventory purchase is not HPP until consumed
+                                        !t.category?.includes('Payroll') &&
+                                        !t.description.toLowerCase().includes('gaji')
+                                    )
+                                    .reduce((s, t) => s + t.total, 0);
+                                const biayaFOHPerButir = totalButirProduksi > 0 ? totalFOH / totalButirProduksi : 0;
+
+                                // 4. Depreciation (Fixed FOH)
                                 const totalDays = filteredProdLogs.length || 1;
                                 const avgDailyProd = totalButirProduksi / totalDays;
-
-                                // Penyusutan ayam per butir
                                 const depLayerPerButir = farmSettings.layerLifeYears > 0 && avgDailyProd > 0
                                     ? (farmSettings.layerValueTotal - farmSettings.layerSalvageValue) / (farmSettings.layerLifeYears * 365 * avgDailyProd)
                                     : 0;
-
-                                // Penyusutan kandang per butir
                                 const depCagePerButir = farmSettings.cageLifeYears > 0 && avgDailyProd > 0
                                     ? (farmSettings.cageValueTotal - farmSettings.cageSalvageValue) / (farmSettings.cageLifeYears * 365 * avgDailyProd)
                                     : 0;
 
-                                // Biaya pakan per butir
-                                const biayaPakanPerButir = totalButirProduksi > 0
-                                    ? (totalFeedConsumedKg * hargaPakanPerKg) / totalButirProduksi : 0;
+                                // TOTAL HPP DASAR
+                                const totalBiayaProduksi = totalBiayaPakanKonsumsi + totalGaji + totalFOH + ((depLayerPerButir + depCagePerButir) * totalButirProduksi);
+                                const hppDasar = totalButirProduksi > 0 ? totalBiayaProduksi / totalButirProduksi : 0;
+                                
+                                // HPP dengan Cadangan Risiko
+                                const hppBase = hppDasar + (totalButirProduksi > 0 ? hppCadangan / totalButirProduksi : 0);
 
-                                // Biaya operasional lainnya per butir
-                                const totalOpex = operationalExpenses.reduce((s, e) => s + e.amount, 0);
-                                const biayaOpsPerButir = totalButirProduksi > 0 ? totalOpex / totalButirProduksi : 0;
-
-                                // Biaya tenaga kerja per butir
-                                const totalGaji = expenseTransactions
-                                    .filter(t => t.category === 'Tenaga Kerja' || t.description.toLowerCase().includes('gaji'))
-                                    .reduce((s, t) => s + t.total, 0);
-                                const biayaTKPerButir = totalButirProduksi > 0 ? totalGaji / totalButirProduksi : 0;
-
-                                // === TOTAL BIAYA PRODUKSI ===
-                                const totalBiayaProduksi = bahanTransactions.reduce((s, t) => s + t.total, 0)
-                                    + totalGaji + totalOpex
-                                    + (depLayerPerButir + depCagePerButir) * (totalButirProduksi || 1);
-
-                                // === HPP DASAR ===
-                                const hppBase = totalButirProduksi > 0
-                                    ? (totalBiayaProduksi + hppCadangan) / totalButirProduksi
-                                    : 0;
-
-                                // === HARGA JUAL FINAL ===
-                                // Rumus: Harga_Jual = ((Biaya + Cadangan) / Total_Telur) Ãƒâ€” (1 + Margin/100)
+                                // Estimasi Harga Jual (Markup Strategy)
                                 const hargaJualBase = hppBase * (1 + hppMarginPct / 100);
 
-                                // Komponen per butir untuk breakdown chart
-                                const biayaPakanPerButirFull = totalBiayaProduksi > 0 && totalButirProduksi > 0
-                                    ? feedCostTotal / totalButirProduksi : biayaPakanPerButir;
 
-                                // Markup per kategori
+
                                 const QUALITY_MULT: Record<string, number> = {
-                                    'Remban': 1.00,
-                                    'Bujang': 0.93,
-                                    'KS': 0.88,
-                                    'Pelor': 0.82,
-                                    'Bujang Retak': 0.76,
-                                    'KS Retak': 0.68,
-                                    'Retak': 0.60,
-                                    'Pecah': 0.38,
+                                    'Remban': 1.00, 'Bujang': 0.93, 'KS': 0.88, 'Pelor': 0.82,
+                                    'Bujang Retak': 0.76, 'KS Retak': 0.68, 'Retak': 0.60, 'Pecah': 0.38,
                                 };
 
                                 const components = [
-                                    { label: 'Biaya Pakan', val: biayaPakanPerButirFull, color: 'bg-amber-400', icon: <ShoppingCart size={10} /> },
+                                    { label: 'Biaya Pakan', val: biayaPakanPerButir, color: 'bg-amber-400', icon: <ShoppingCart size={10} /> },
                                     { label: 'Tenaga Kerja', val: biayaTKPerButir, color: 'bg-blue-400', icon: <Receipt size={10} /> },
+                                    { label: 'Operasional (FOH)', val: biayaFOHPerButir, color: 'bg-emerald-400', icon: <Zap size={10} /> },
                                     { label: 'Susut Ayam', val: depLayerPerButir, color: 'bg-rose-400', icon: <Bird size={10} /> },
                                     { label: 'Susut Kandang', val: depCagePerButir, color: 'bg-slate-400', icon: <Home size={10} /> },
-                                    { label: 'Biaya Ops Lain', val: biayaOpsPerButir, color: 'bg-purple-400', icon: <ClipboardList size={10} /> },
                                     { label: 'Cadangan Risiko', val: totalButirProduksi > 0 ? hppCadangan / totalButirProduksi : 0, color: 'bg-orange-400', icon: <AlertTriangle size={10} /> },
                                 ];
 
                                 return (
                                     <div className="bg-white border border-slate-200 shadow-sm">
-                                        {/* Header */}
                                         <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-amber-50 to-white">
                                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                                 <div>
@@ -922,10 +849,9 @@ export default function Finance() {
                                                         <Calculator size={16} /> HPP &amp; Estimasi Harga Jual Telur
                                                     </h3>
                                                     <p className="text-[9px] text-amber-600 font-bold uppercase tracking-widest mt-0.5">
-                                                        Rumus: Harga_Jual = ((Biaya + Cadangan) / Total_Butir) &times; (1 + Margin%)
+                                                        Rumus: Harga_Jual = ((Biaya Pakan + TK + Penyusutan) / Total_Butir) &times; (1 + Margin%)
                                                     </p>
                                                 </div>
-                                                {/* HPP Controls */}
                                                 <div className="flex items-center gap-3 flex-wrap">
                                                     <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                                                         <label className="text-[9px] font-black uppercase text-amber-700 whitespace-nowrap">Margin %</label>
@@ -955,7 +881,6 @@ export default function Finance() {
                                         </div>
 
                                         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            {/* Komponen HPP */}
                                             <div className="space-y-2">
                                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><BarChart2 size={12} /> Komponen HPP per Butir</p>
                                                 {components.map(c => {
@@ -977,14 +902,13 @@ export default function Finance() {
                                                 {totalButirProduksi === 0 && (
                                                     <p className="text-[9px] text-slate-400 italic text-center py-4">Belum cukup data produksi untuk menghitung HPP</p>
                                                 )}
-                                                {/* Summary box */}
                                                 <div className="mt-3 p-3 bg-slate-900 rounded-lg text-white">
                                                     <div className="flex justify-between text-[9px] mb-1">
                                                         <span className="text-slate-400 font-bold">Total Butir Diproduksi</span>
                                                         <span className="font-black">{totalButirProduksi.toLocaleString()} butir</span>
                                                     </div>
                                                     <div className="flex justify-between text-[9px] mb-1">
-                                                        <span className="text-slate-400 font-bold">Total Biaya Produksi</span>
+                                                        <span className="text-slate-400 font-bold">Total Biaya Produksi (COGS)</span>
                                                         <span className="font-black">{formatCurrency(totalBiayaProduksi)}</span>
                                                     </div>
                                                     <div className="flex justify-between text-[9px] mb-1">
@@ -998,7 +922,6 @@ export default function Finance() {
                                                 </div>
                                             </div>
 
-                                            {/* Estimasi harga jual per kategori */}
                                             <div>
                                                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-1"><TrendingUp size={12} /> Estimasi Harga Jual / Kategori</p>
                                                 <div className="overflow-x-auto">
@@ -1024,7 +947,7 @@ export default function Finance() {
                                                                         <td className="px-3 py-2 text-right font-bold text-amber-600">&times;{qMult.toFixed(2)}</td>
                                                                         <td className="px-3 py-2 text-right font-black text-emerald-700">{formatCurrency(hargaJual)}</td>
                                                                         <td className={`px-3 py-2 text-right font-bold ${diff !== null ? (isProfit ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-300'}`}>
-                                                                            {masterPrice ? `${formatCurrency(masterPrice)} (${diff! >= 0 ? '+' : ''}${diff!.toLocaleString()})` : '–'}
+                                                                            {masterPrice ? `${formatCurrency(masterPrice)} (${diff! >= 0 ? '+' : ''}${diff!.toLocaleString()})` : '–'}
                                                                         </td>
                                                                         <td className="px-3 py-2 text-center">
                                                                             {masterPrice ? (isProfit
@@ -1049,8 +972,6 @@ export default function Finance() {
                             })()}
                             {activeTab === 'BUKU_TRANSAKSI' && (
                                 <div className="space-y-8">
-
-                                    {/* SECTION 0: KAS & BANK BALANCES — Semua akun kas/bank */}
                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                         {accounts.filter(a => a.isCashOrBank).map(acc => {
                                             const bal = getAccountBalance(acc.id);
@@ -1078,9 +999,8 @@ export default function Finance() {
                                         })}
                                     </div>
 
-                                    {/* BUKU KAS UMUM — Semua transaksi per kandang */}
-                                    <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
-                                        <div className="px-8 py-5 border-b border-slate-100 bg-slate-900 flex items-center justify-between">
+                                    {/* <div className="bg-white border border-slate-200 overflow-hidden shadow-sm"> */}
+                                    {/* <div className="px-8 py-5 border-b border-slate-100 bg-slate-900 flex items-center justify-between">
                                             <div>
                                                 <h3 className="font-bold text-base text-white uppercase tracking-tight italic">Buku Kas Umum</h3>
                                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Semua mutasi kas · {houseTransactions.length} transaksi</p>
@@ -1089,8 +1009,8 @@ export default function Finance() {
                                                 <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Saldo Akhir</p>
                                                 <p className={`text-lg font-black ${(totalIncome - totalExpenses) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(totalIncome - totalExpenses + totalModalAwal)}</p>
                                             </div>
-                                        </div>
-                                        <div className="overflow-x-auto">
+                                        </div> */}
+                                    {/* <div className="overflow-x-auto">
                                             <table className="w-full text-left border-collapse min-w-max">
                                                 <thead>
                                                     <tr className="bg-slate-800 text-white text-[9px] font-black uppercase tracking-widest">
@@ -1112,12 +1032,11 @@ export default function Finance() {
                                                             <td className="px-3 py-2.5 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                                                             <td className="px-3 py-2.5 font-bold text-slate-800 max-w-[200px] truncate">{t.description}</td>
                                                             <td className="px-3 py-2.5 text-center">
-                                                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${
-                                                                    t.type === 'INCOME' ? 'bg-emerald-50 text-emerald-700' :
+                                                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${t.type === 'INCOME' ? 'bg-emerald-50 text-emerald-700' :
                                                                     t.type === 'EXPENSE' ? 'bg-rose-50 text-rose-700' :
-                                                                    t.type === 'MODAL' ? 'bg-blue-50 text-blue-700' :
-                                                                    'bg-slate-100 text-slate-600'
-                                                                }`}>{t.type}</span>
+                                                                        t.type === 'MODAL' ? 'bg-blue-50 text-blue-700' :
+                                                                            'bg-slate-100 text-slate-600'
+                                                                    }`}>{t.type}</span>
                                                             </td>
                                                             <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">{(t.type === 'INCOME' || t.type === 'MODAL') ? formatCurrency(t.total) : '-'}</td>
                                                             <td className="px-3 py-2.5 text-right font-mono font-bold text-rose-600">{t.type === 'EXPENSE' ? formatCurrency(t.total) : '-'}</td>
@@ -1130,17 +1049,15 @@ export default function Finance() {
                                                         <tr>
                                                             <td colSpan={4} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700">TOTAL</td>
                                                             <td className="px-3 py-3 text-right font-black text-emerald-700 font-mono">{formatCurrency(totalIncome + totalModalAwal)}</td>
-                                                            <td className="px-3 py-3 text-right font-black text-rose-600 font-mono">{formatCurrency(totalExpenses)}</td>
+                                                            <td className="px-3 py-3 text-right font-black text-rose-600 font-mono">{formatCurrency(houseTransactions.filter(t => t.type === 'EXPENSE').reduce((a, b) => a + b.total, 0))}</td>
                                                             <td />
                                                         </tr>
                                                     </tfoot>
                                                 )}
                                             </table>
-                                        </div>
-                                    </div>
+                                        </div> */}
+                                    {/* </div> */}
 
-
-                                    {/* SECTION 1: PENJUALAN TELUR */}
                                     <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
                                         <div className="px-8 py-5 border-b border-slate-100 bg-emerald-50 flex items-center justify-between">
                                             <div>
@@ -1195,7 +1112,6 @@ export default function Finance() {
                                         </div>
                                     </div>
 
-                                    {/* SECTION 2: PENGELUARAN BAHAN */}
                                     <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
                                         <div className="px-8 py-5 border-b border-slate-100 bg-amber-50 flex items-center justify-between">
                                             <div>
@@ -1250,12 +1166,11 @@ export default function Finance() {
                                         </div>
                                     </div>
 
-                                    {/* SECTION 3: PENGELUARAN OPERASIONAL */}
                                     <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
                                         <div className="px-8 py-5 border-b border-slate-100 bg-rose-50 flex items-center justify-between">
                                             <div>
                                                 <h3 className="font-bold text-base text-rose-800 uppercase tracking-tight italic">Pengeluaran Operasional</h3>
-                                                <p className="text-[9px] text-rose-600 font-bold uppercase tracking-widest mt-0.5">Gaji, Aset, Biaya Operasional · {operasionalTransactions.length} transaksi</p>
+                                                <p className="text-[9px] text-rose-600 font-bold uppercase tracking-widest mt-0.5">Gaji, Biaya Operasional · {operasionalTransactions.length} transaksi</p>
                                             </div>
                                             <div className="text-right">
                                                 <p className="text-[9px] text-rose-600 font-bold uppercase tracking-widest">Total Pengeluaran</p>
@@ -1305,14 +1220,13 @@ export default function Finance() {
                                         </div>
                                     </div>
 
-                                    {/* SUMMARY ROW */}
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                         <div className="bg-emerald-900 text-white p-4 lg:p-5">
                                             <p className="text-[9px] font-bold uppercase tracking-widest text-emerald-400 mb-1">Total Pendapatan</p>
                                             <p className="text-lg lg:text-xl font-black text-emerald-300">{formatCurrency(salesTransactions.reduce((a, t) => a + t.total, 0))}</p>
                                         </div>
                                         <div className="bg-rose-900 text-white p-4 lg:p-5">
-                                            <p className="text-[9px] font-bold uppercase tracking-widest text-rose-400 mb-1">Total Pengeluaran</p>
+                                            <p className="text-[9px] font-bold uppercase tracking-widest text-rose-400 mb-1">Total Beban & OpEx</p>
                                             <p className="text-lg lg:text-xl font-black text-rose-300">{formatCurrency([...bahanTransactions, ...operasionalTransactions].reduce((a, t) => a + t.total, 0))}</p>
                                         </div>
                                         <div className={cn("p-4 lg:p-5 text-white", netProfit >= 0 ? 'bg-slate-900' : 'bg-rose-950')}>
@@ -1321,7 +1235,6 @@ export default function Finance() {
                                         </div>
                                     </div>
 
-                                    {/* MODAL MASUK */}
                                     {modalTransactions.length > 0 && (
                                         <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
                                             <div className="px-8 py-4 border-b border-slate-100 bg-slate-50">
@@ -1437,9 +1350,20 @@ export default function Finance() {
                                                             <td className="px-3 py-3 text-right font-mono font-bold">{formatCurrency(r.amount)}</td>
                                                             <td className="px-3 py-3 text-right font-mono font-bold text-rose-600">{formatCurrency(r.remainingAmount)}</td>
                                                             <td className="px-3 py-3 text-center">
-                                                                <span className={cn("px-2 py-1 rounded-sm text-[9px] font-bold uppercase", r.status === 'PAID' ? "bg-emerald-100 text-emerald-700" : r.status === 'PARTIAL' ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700")}>
-                                                                    {r.status}
-                                                                </span>
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <span className={cn("px-2 py-1 rounded-sm text-[9px] font-bold uppercase", r.status === 'PAID' || r.status === 'CLOSED' ? "bg-emerald-100 text-emerald-700" : r.status === 'PARTIAL' ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700")}>
+                                                                        {r.status}
+                                                                    </span>
+                                                                    {(r.status !== 'PAID' && r.status !== 'CLOSED') && (
+                                                                        <button
+                                                                            onClick={() => { setSelectedApArId(r.id); setIsSettlementModalOpen(true); }}
+                                                                            className="bg-slate-900 text-white p-1.5 rounded-sm hover:bg-slate-800 transition-all shadow-sm"
+                                                                            title="Bayar / Cicil"
+                                                                        >
+                                                                            <Banknote size={12} />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     ))}
@@ -1499,7 +1423,6 @@ export default function Finance() {
                                 </div>
                             )}
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB: PENGELUARAN HARIAN Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             {activeTab === 'PENGELUARAN' && (
                                 <div className="space-y-6">
                                     <div className="flex justify-between items-center">
@@ -1542,7 +1465,6 @@ export default function Finance() {
                                 </div>
                             )}
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB: BUKU BESAR Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             {activeTab === 'BUKU_BESAR' && (
                                 <div className="space-y-6">
                                     <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
@@ -1560,7 +1482,7 @@ export default function Finance() {
                                         return (
                                             <div key={acc.id} className="bg-white border border-slate-200 shadow-sm overflow-x-auto">
                                                 <div className="px-6 py-3 bg-slate-900 text-white flex justify-between items-center min-w-max">
-                                                    <span className="font-black text-xs uppercase tracking-widest">{acc.code} – {acc.name}</span>
+                                                    <span className="font-black text-xs uppercase tracking-widest">{acc.code} – {acc.name}</span>
                                                     <span className="text-[9px] font-bold text-slate-400 uppercase">{acc.category}</span>
                                                 </div>
                                                 <table className="w-full text-left min-w-max">
@@ -1591,16 +1513,15 @@ export default function Finance() {
                                 </div>
                             )}
 
-                            {/* Ã¢â€â‚¬Ã¢â€â‚¬ TAB: NERACA SALDO Ã¢â€â‚¬Ã¢â€â‚¬ */}
                             {activeTab === 'NERACA_SALDO' && <NeracaSaldo />}
                         </div>
                     </div>
                 </div>
             </div>
+
             {/* MODALS */}
             <Modal isOpen={isAssetModalOpen} onClose={() => { setIsAssetModalOpen(false); setAssetOwnershipType('BELI'); }} title={editingAsset ? "Edit Aset" : "Tambah Aset Baru"}>
                 <form onSubmit={handleSaveAsset} className="space-y-6">
-                    {/* Ownership Type — hanya tampil saat tambah baru */}
                     {!editingAsset && (
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-3">Jenis Perolehan Aset</label>
@@ -1771,7 +1692,6 @@ export default function Finance() {
                 )}
             </Modal>
 
-            {/* Ã¢â€â‚¬Ã¢â€â‚¬ MODAL: PENGELUARAN OPERASIONAL HARIAN Ã¢â€â‚¬Ã¢â€â‚¬ */}
             <Modal isOpen={isOpexModalOpen} onClose={() => setIsOpexModalOpen(false)} title="Tambah Pengeluaran Harian">
                 <form onSubmit={(e) => {
                     e.preventDefault();
@@ -1824,7 +1744,6 @@ export default function Finance() {
                 </form>
             </Modal>
 
-            {/* MODAL: DANA PEREMAJAAN*/}
             <Modal isOpen={isSinkingModalOpen} onClose={() => setIsSinkingModalOpen(false)} title="Catat Realisasi Dana Peremajaan">
                 <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg mb-4">
                     <p className="text-[10px] font-bold text-amber-700 leading-relaxed">
@@ -1859,7 +1778,7 @@ export default function Finance() {
                     </button>
                 </form>
             </Modal>
-            {/* MODAL: AP/AR - TAMBAH TAGIHAN HUTANG / PIUTANG */}
+
             <Modal isOpen={isApArModalOpen} onClose={() => setIsApArModalOpen(false)} title="Tambah Tagihan Hutang / Piutang">
                 <form onSubmit={(e) => {
                     e.preventDefault();
@@ -1908,6 +1827,60 @@ export default function Finance() {
                 </form>
             </Modal>
 
+            <Modal isOpen={isSettlementModalOpen} onClose={() => setIsSettlementModalOpen(false)} title="Pelunasan Hutang / Piutang">
+                {selectedApArId && (() => {
+                    const record = apArRecords.find(r => r.id === selectedApArId);
+                    if (!record) return null;
+                    return (
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const fd = new FormData(e.target as HTMLFormElement);
+                            const amount = Number(fd.get('amount'));
+                            const accId = fd.get('accountId') as string;
+                            const notes = fd.get('notes') as string;
+
+                            updateAPARRecord(record.id, amount, accId, notes);
+                            setIsSettlementModalOpen(false);
+                            Swal.fire('Berhasil', 'Pembayaran telah dicatat dan dijurnal.', 'success');
+                        }} className="space-y-5">
+                            <div className="p-4 bg-slate-900 border border-slate-800 text-white rounded-sm">
+                                <p className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.2em] mb-1">{record.type === 'HUTANG' ? 'HUTANG KEPADA' : 'PIUTANG DARI'}</p>
+                                <h4 className="text-lg font-black italic">{record.entityName}</h4>
+                                <div className="mt-4 flex justify-between items-end border-t border-slate-800 pt-3">
+                                    <div>
+                                        <p className="text-[9px] text-slate-400 uppercase font-bold">Sisa Terutang</p>
+                                        <p className="text-xl font-black text-white">{formatCurrency(record.remainingAmount)}</p>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 italic">Jatuh Tempo: {record.dueDate ? new Date(record.dueDate).toLocaleDateString('id-ID') : '-'}</p>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jumlah Pembayaran (Rp)</label>
+                                <input name="amount" type="number" max={record.remainingAmount} min="1" required defaultValue={record.remainingAmount} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 font-mono" />
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Bayar Dari / Ke Rekening</label>
+                                <select name="accountId" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                                    {accounts.filter(a => a.isCashOrBank).map(a => (
+                                        <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Catatan Pembayaran</label>
+                                <input name="notes" type="text" placeholder="Cth: Cicilan ke-1 atau Pelunasan penuh" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                            </div>
+
+                            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 flex items-center justify-center gap-2">
+                                <CheckCircle size={16} /> Konfirmasi Pembayaran
+                            </button>
+                        </form>
+                    );
+                })()}
+            </Modal>
         </>
     );
 }

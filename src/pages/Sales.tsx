@@ -41,14 +41,14 @@ export default function Sales() {
 
   // Load master prices from FarmSettings
   const masterPrices = farmSettings.masterPrices || [];
-  const currentPrice = masterPrices.find(p => p.id === activeCategory)?.price || 0;
+  const currentPrice = masterPrices.find(p => p.name === activeCategory || p.id === activeCategory)?.price || 0;
 
   // ── Egg Stock Lookup ─────────────────────────────────────────────────────────
   // Find the EGG_STOCK inventory item for the currently selected category
   const eggStockItem = inventory.find(
     i => i.type === ItemType.EGG_STOCK && i.eggCategory === activeCategory && i.houseId === activeHouse?.id
   );
-  const availableStock = eggStockItem ? eggStockItem.quantity : null; // null = no EGG_STOCK tracking (e.g. NON_EGG)
+  const availableStock = eggStockItem ? eggStockItem.quantity : (activeCategory !== 'NON_EGG' ? 0 : null);
   const isOverStock = availableStock !== null && quantity > availableStock;
 
   const totalPrice = isFree ? 0 : quantity * currentPrice;
@@ -176,23 +176,35 @@ export default function Sales() {
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-3">Pilih Kategori Produk</label>
                   <div className="grid grid-cols-2 gap-3">
-                    {masterPrices.filter(p => p.id !== 'NON_EGG').map((p) => (
-                      <button 
-                        key={p.id}
-                        onClick={() => setActiveCategory(p.id)}
-                        className={cn(
-                          "p-3 lg:p-4 rounded-sm border text-left transition-all",
-                          activeCategory === p.id 
-                            ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200" 
-                            : "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100"
-                        )}
-                      >
-                        <div className="font-bold text-xs uppercase tracking-tight">{p.name}</div>
-                        <div className={cn("text-[9px] uppercase font-bold opacity-60 italic", activeCategory === p.id ? "text-amber-500" : "text-slate-400")}>
-                          {getEggCategoryRange(p.id as EggCategory)}
-                        </div>
-                      </button>
-                    ))}
+                    {masterPrices.filter(p => p.id !== 'NON_EGG').map((p) => {
+                      // Match by name (e.g. "Remban") instead of ID (e.g. "BM") to align with Production log & Inventory
+                      const catStock = inventory.find(
+                        i => i.type === ItemType.EGG_STOCK && i.eggCategory === p.name && i.houseId === activeHouse?.id
+                      )?.quantity || 0;
+                      return (
+                        <button 
+                          key={p.id}
+                          onClick={() => setActiveCategory(p.name)}
+                          className={cn(
+                            "p-3 lg:p-4 rounded-sm border text-left transition-all relative overflow-hidden",
+                            activeCategory === p.name 
+                              ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200" 
+                              : (catStock > 0 ? "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100" : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed grayscale")
+                          )}
+                        >
+                          <div className="font-bold text-xs uppercase tracking-tight">{p.name}</div>
+                          <div className={cn("text-[9px] uppercase font-bold opacity-60 italic", activeCategory === p.name ? "text-amber-500" : "text-slate-400")}>
+                            {getEggCategoryRange(p.name as EggCategory)}
+                          </div>
+                          <div className={cn(
+                            "absolute bottom-2 right-3 text-[10px] font-black italic",
+                            catStock > 0 ? (activeCategory === p.name ? "text-white/40" : "text-slate-500") : "text-rose-600"
+                          )}>
+                            {catStock.toLocaleString()}
+                          </div>
+                        </button>
+                      );
+                    })}
                     <button 
                         onClick={() => setActiveCategory('NON_EGG')}
                         className={cn(

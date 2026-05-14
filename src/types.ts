@@ -129,6 +129,7 @@ export interface APARRecord {
   createdAt: string;
   status: 'OPEN' | 'PARTIAL' | 'CLOSED';
   relatedTransactionId?: string;
+  houseId?: string; // Tagging per house
   paymentHistory: PaymentHistoryEntry[];
 }
 

@@ -38,7 +38,7 @@ const decryptData = (ciphertext: any): any => {
 };
 
 export const syncToDb = async (key: string, data: any) => {
-  // Ensure data is an object/array if it's a stringified JSON (could be multiple times)
+  // 1. Save locally to IndexedDB (Encrypted)
   let cleanData = data;
   while (typeof cleanData === 'string') {
     try {
@@ -53,7 +53,18 @@ export const syncToDb = async (key: string, data: any) => {
     }
   }
 
-  // 1. Save locally to IndexedDB (Encrypted)
+  // Deduplicate array data by ID to prevent backend ER_DUP_ENTRY
+  if (Array.isArray(cleanData)) {
+    const seen = new Set();
+    cleanData = cleanData.filter(item => {
+      if (item && item.id) {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+      }
+      return true;
+    });
+  }
+
   const encrypted = encryptData(cleanData);
   await localforage.setItem(key, encrypted);
   

@@ -21,11 +21,15 @@ import Modal from '../components/Modal';
 import Swal from 'sweetalert2';
 import { useApp } from '../AppContext';
 import { useGlobalData } from '../GlobalContext';
+import { useHouse } from '../HouseContext';
 import { generateSalarySlip } from '../lib/pdfGenerator';
 
 export default function Workers() {
   const { user: currentUser, users, addUser, updateUser } = useApp();
-  const { addTransaction } = useGlobalData();
+  const { addTransaction, addJournalEntry, accounts } = useGlobalData();
+  const { houses } = useHouse(); // Corrected hook
+
+
   const [isWorkerModalOpen, setIsWorkerModalOpen] = useState(false);
   const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
   const [selectedWorker, setSelectedWorker] = useState<User | null>(null);
@@ -78,6 +82,8 @@ export default function Workers() {
     setIsSalaryModalOpen(false);
   };
 
+  const [selectedHouseId, setSelectedHouseId] = useState<string>('CENTRAL');
+
   const handleDownloadSlip = () => {
     if (!selectedWorker) return;
     
@@ -91,16 +97,26 @@ export default function Workers() {
     const deductions = salaryItems.filter(i => i.type === 'DEDUCTION').reduce((acc, curr) => acc + curr.amount, 0);
     const total = baseSalary + additions - deductions;
 
-    // Record to financial report
+    // Record to financial report with Journal Entry
+    const journalId = addJournalEntry(
+        { date: new Date().toISOString().split('T')[0], description: `Gaji: ${selectedWorker.name}`, reference: `PAY-${Date.now()}` },
+        [
+            { accountId: 'acc-beban-gaji', debit: total, credit: 0, houseId: selectedHouseId },
+            { accountId: 'acc-kas', debit: 0, credit: total, houseId: selectedHouseId }
+        ]
+    );
+
     addTransaction({
+      houseId: selectedHouseId,
       date: new Date().toISOString().split('T')[0],
       description: `Gaji & Borongan: ${selectedWorker.name}`,
       qty: '1 Org',
       price: total,
       total: total,
-      account: 'Kas Tunai',
+      account: 'Kas',
       type: 'EXPENSE',
-      category: 'Payroll'
+      category: 'Payroll',
+      journalId
     });
 
     generateSalarySlip({
@@ -111,6 +127,8 @@ export default function Workers() {
       totalSalary: total,
       date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
     });
+
+    Swal.fire('Berhasil', 'Gaji telah dicatat dan slip diunduh.', 'success');
   };
 
   // Include both ADMIN and WORKER
@@ -267,15 +285,29 @@ export default function Workers() {
         <div className="space-y-8">
             <form onSubmit={handleUpdateSalary} className="space-y-4">
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 italic border-b border-slate-100 pb-2">Gaji Pokok Utama</h4>
-                <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                        <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Gaji Bulanan Tetap (IDR)</label>
-                        <input name="salary" required type="number" defaultValue={selectedWorker?.salary} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 font-mono" />
-                    </div>
-                    <button type="submit" className="self-end bg-slate-900 text-white p-3 rounded-sm hover:bg-slate-800 transition-all shadow-md">
-                        <Save size={18} />
-                    </button>
+            <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Gaji Bulanan Tetap (IDR)</label>
+                    <input name="salary" required type="number" defaultValue={selectedWorker?.salary} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 font-mono" />
                 </div>
+                <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Bebankan ke Kandang</label>
+                    <select 
+                        value={selectedHouseId} 
+                        onChange={(e) => setSelectedHouseId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                    >
+                        <option value="CENTRAL">Pusat / Shared</option>
+                        {houses.map(h => (
+                            <option key={h.id} value={h.id}>{h.name}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+            <button type="submit" className="w-full bg-slate-900 text-white py-3 rounded-sm hover:bg-slate-800 transition-all shadow-md flex items-center justify-center gap-2">
+                <Save size={18} /> Update Gaji Pokok
+            </button>
+
             </form>
 
             <div className="space-y-4">

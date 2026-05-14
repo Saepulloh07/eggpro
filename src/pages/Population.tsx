@@ -4,8 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Users, Plus, ArrowRightLeft, Skull, ShoppingCart, 
+import {
+  Users, Plus, ArrowRightLeft, Skull, ShoppingCart,
   Calendar, Trash2, Search, TrendingUp, TrendingDown,
   History, Info, ChevronRight, Download
 } from 'lucide-react';
@@ -20,27 +20,27 @@ import { MutationType, type PopulationMutation } from '../types';
 const ITEMS_PER_PAGE = 10;
 
 const MUTATION_TYPE_CONFIG = {
-  [MutationType.ARRIVAL]: { 
-    label: 'DOC Masuk', 
-    icon: Plus, 
+  [MutationType.ARRIVAL]: {
+    label: 'DOC Masuk',
+    icon: Plus,
     color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
     desc: 'Penambahan populasi dari pembelian DOC baru.'
   },
-  [MutationType.TRANSFER]: { 
-    label: 'Mutasi Kandang', 
-    icon: ArrowRightLeft, 
+  [MutationType.TRANSFER]: {
+    label: 'Mutasi Kandang',
+    icon: ArrowRightLeft,
     color: 'text-blue-600 bg-blue-50 border-blue-200',
     desc: 'Pemindahan populasi antar kandang.'
   },
-  [MutationType.MORTALITY]: { 
-    label: 'Mortalitas', 
-    icon: Skull, 
+  [MutationType.MORTALITY]: {
+    label: 'Mortalitas',
+    icon: Skull,
     color: 'text-rose-600 bg-rose-50 border-rose-200',
     desc: 'Pengurangan populasi karena kematian ayam.'
   },
-  [MutationType.CULLING]: { 
-    label: 'Afkir', 
-    icon: ShoppingCart, 
+  [MutationType.CULLING]: {
+    label: 'Afkir',
+    icon: ShoppingCart,
     color: 'text-amber-600 bg-amber-50 border-amber-200',
     desc: 'Pengurangan populasi karena penjualan ayam afkir.'
   },
@@ -54,7 +54,7 @@ export default function Population() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<MutationType | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  
+
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
     count: 0,
@@ -177,7 +177,7 @@ export default function Population() {
                 <input type="text" placeholder="Cari..." className="pl-8 pr-4 py-1.5 bg-slate-50 border border-slate-200 text-[10px] focus:outline-none focus:border-amber-500 rounded-sm" />
               </div>
             </div>
-            
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 border-b border-slate-100">
@@ -199,7 +199,7 @@ export default function Population() {
                       const config = MUTATION_TYPE_CONFIG[mut.type];
                       const Icon = config.icon;
                       const isIncoming = mut.type === MutationType.ARRIVAL || (mut.type === MutationType.TRANSFER && mut.targetHouseId === activeHouse?.id);
-                      
+
                       return (
                         <tr key={mut.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap text-[10px] font-bold text-slate-600">{new Date(mut.date).toLocaleDateString('id-ID')}</td>
@@ -285,28 +285,34 @@ export default function Population() {
                   </div>
                 </div>
                 <div className="border-t border-slate-800 pt-4">
-                   <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Mutasi (Net)</p>
-                   <p className="text-lg font-black text-blue-400">{(totalTransferIn - totalTransferOut).toLocaleString()} <span className="text-[10px] text-slate-600">ekor</span></p>
+                  <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">Mutasi (Net)</p>
+                  <p className="text-lg font-black text-blue-400">{(totalTransferIn - totalTransferOut).toLocaleString()} <span className="text-[10px] text-slate-600">ekor</span></p>
                 </div>
               </div>
             </div>
             <Users size={80} className="absolute -bottom-4 -right-4 text-white/5" />
           </div>
 
-          <div className="bg-white border border-slate-200 p-5">
+          <div className="bg-white border border-slate-200 p-5 shadow-sm">
             <h3 className="font-bold text-sm text-slate-700 mb-4">Informasi Penting</h3>
             <ul className="space-y-3">
               <li className="flex items-start gap-2 text-[10px] text-slate-500">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1 shrink-0" />
-                Setiap mutasi <b>DOC Masuk</b> dan <b>Afkir</b> akan tercatat otomatis di modul keuangan.
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                <span>
+                  Setiap mutasi <b>DOC Masuk</b> dan <b>Afkir</b> akan tercatat otomatis di modul keuangan.
+                </span>
               </li>
               <li className="flex items-start gap-2 text-[10px] text-slate-500">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1 shrink-0" />
-                Mutasi kandang hanya bisa dilakukan ke kandang yang memiliki <b>Flock Aktif</b>.
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                <span>
+                  Mutasi kandang hanya bisa dilakukan ke kandang yang memiliki <b>Flock Aktif</b>.
+                </span>
               </li>
               <li className="flex items-start gap-2 text-[10px] text-slate-500">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1 shrink-0" />
-                Gunakan fitur mortalitas di modul <b>Produksi Harian</b> untuk pencatatan harian yang lebih praktis.
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                <span>
+                  Gunakan fitur mortalitas di modul <b>Produksi Harian</b> untuk pencatatan harian yang lebih praktis.
+                </span>
               </li>
             </ul>
           </div>
@@ -314,9 +320,9 @@ export default function Population() {
       </div>
 
       {/* Mutation Modal */}
-      <Modal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
         title={selectedType ? MUTATION_TYPE_CONFIG[selectedType].label : 'Mutasi Populasi'}
       >
         <div className="space-y-4">
@@ -365,7 +371,7 @@ export default function Population() {
               className="w-full bg-slate-50 border border-slate-200 px-3 py-2 text-sm font-medium focus:outline-none focus:border-amber-500 resize-none" />
           </div>
 
-          <button onClick={handleSave} 
+          <button onClick={handleSave}
             className="w-full bg-slate-900 text-white py-3 font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
             Simpan Mutasi
           </button>

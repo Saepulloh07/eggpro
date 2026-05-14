@@ -58,26 +58,36 @@ interface KpiCardProps {
 function KpiCard({ label, value, sub, icon: Icon, trend, trendLabel, accentClass = 'bg-white', progress }: KpiCardProps) {
   return (
     <div className={cn('p-5 border border-slate-200 shadow-sm hover:shadow-md transition-all relative overflow-hidden', accentClass)}>
-      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-2xl font-black italic tracking-tight text-slate-900">{value}</p>
-        {trend && (
-          <span className={cn('text-[9px] font-bold flex items-center gap-0.5',
-            trend === 'up' ? 'text-emerald-600' : trend === 'down' ? 'text-rose-600' : 'text-slate-400')}>
-            {trend === 'up' ? <ArrowUpRight size={10} /> : trend === 'down' ? <TrendingDown size={10} /> : null}
-            {trendLabel}
-          </span>
-        )}
-      </div>
-      {progress !== undefined ? (
-        <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-          <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, progress)}%` }}
-            transition={{ duration: 0.8 }} className="h-full bg-amber-500 rounded-full" />
+
+      {/* KONTEN TEKS & PROGRESS (Diatur ke z-10 agar berada di depan) */}
+      <div className="relative z-10">
+        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="text-2xl font-black italic tracking-tight text-slate-900">{value}</p>
+          {trend && (
+            <span className={cn('text-[9px] font-bold flex items-center gap-0.5',
+              trend === 'up' ? 'text-emerald-600' : trend === 'down' ? 'text-rose-600' : 'text-slate-400')}>
+              {trend === 'up' ? <ArrowUpRight size={10} /> : trend === 'down' ? <TrendingDown size={10} /> : null}
+              {trendLabel}
+            </span>
+          )}
         </div>
-      ) : sub ? (
-        <p className="text-[9px] text-slate-400 mt-1.5 font-medium">{sub}</p>
-      ) : null}
-      <Icon size={24} className="absolute right-2 top-2 lg:right-3 lg:top-3 text-slate-100 lg:size-32" />
+        {progress !== undefined ? (
+          <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, progress)}%` }}
+              transition={{ duration: 0.8 }} className="h-full bg-amber-500 rounded-full" />
+          </div>
+        ) : sub ? (
+          <p className="text-[9px] text-slate-400 mt-1.5 font-medium">{sub}</p>
+        ) : null}
+      </div>
+
+      {/* IKON BACKGROUND (Diatur ke z-0 dan diturunkan sedikit opacity-nya) */}
+      {/* Posisi digeser sedikit ke pojok kanan bawah agar lebih pas sebagai watermark */}
+      <Icon
+        size={24}
+        className="absolute -right-2 -bottom-2 lg:-right-4 lg:-bottom-4 text-slate-900 opacity-[0.03] lg:size-40 z-0 pointer-events-none"
+      />
     </div>
   );
 }
@@ -114,7 +124,7 @@ export default function Dashboard() {
   const chartData = useMemo(() => {
     let result = [];
     const now = new Date();
-    
+
     if (chartPeriod === 'HARIAN') {
       const days = 14;
       for (let i = days - 1; i >= 0; i--) {
@@ -139,22 +149,22 @@ export default function Dashboard() {
         endD.setDate(endD.getDate() - (i * 7));
         const startD = new Date(endD);
         startD.setDate(startD.getDate() - 6);
-        
+
         let totalProd = 0, totalPakan = 0, totalMortality = 0, totalEggCount = 0, logCount = 0;
-        
+
         houseLogs.forEach(l => {
           const ld = new Date(l.date);
           if (ld >= startD && ld <= endD) {
-             totalProd += (l.totalButir ?? (l as any).totalKg ?? 0);
-             totalPakan += l.feedConsumed;
-             totalMortality += l.mortality;
-             totalEggCount += l.eggCount;
-             logCount++;
+            totalProd += (l.totalButir ?? (l as any).totalKg ?? 0);
+            totalPakan += l.feedConsumed;
+            totalMortality += l.mortality;
+            totalEggCount += l.eggCount;
+            logCount++;
           }
         });
-        
+
         const avgHdp = logCount > 0 && currentCount > 0 ? ((totalEggCount / logCount) / currentCount) * 100 : null;
-        
+
         result.push({
           name: `W${weeks - i}`,
           produksi: totalProd,
@@ -168,22 +178,22 @@ export default function Dashboard() {
       const months = 6;
       for (let i = months - 1; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const monthStr = d.toISOString().slice(0,7);
-        
+        const monthStr = d.toISOString().slice(0, 7);
+
         let totalProd = 0, totalPakan = 0, totalMortality = 0, totalEggCount = 0, logCount = 0;
-        
+
         houseLogs.forEach(l => {
           if (l.date.startsWith(monthStr)) {
-             totalProd += (l.totalButir ?? (l as any).totalKg ?? 0);
-             totalPakan += l.feedConsumed;
-             totalMortality += l.mortality;
-             totalEggCount += l.eggCount;
-             logCount++;
+            totalProd += (l.totalButir ?? (l as any).totalKg ?? 0);
+            totalPakan += l.feedConsumed;
+            totalMortality += l.mortality;
+            totalEggCount += l.eggCount;
+            logCount++;
           }
         });
-        
+
         const avgHdp = logCount > 0 && currentCount > 0 ? ((totalEggCount / logCount) / currentCount) * 100 : null;
-        
+
         result.push({
           name: d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
           produksi: totalProd,
@@ -194,7 +204,7 @@ export default function Dashboard() {
         });
       }
     }
-    
+
     return result;
   }, [houseLogs, chartPeriod, currentCount, ageWeeks]);
 
@@ -209,7 +219,7 @@ export default function Dashboard() {
 
   const feedIntakePerBird = lastLog && currentCount > 0 ? (lastLog.feedConsumed * 1000) / currentCount : 0;
 
-  const totalMortality = useMemo(() => 
+  const totalMortality = useMemo(() =>
     mutations.filter(m => m.houseId === activeHouse?.id && m.type === MutationType.MORTALITY).reduce((a, b) => a + b.count, 0),
     [mutations, activeHouse]);
 
@@ -513,7 +523,7 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
-              
+
               <div className="pt-3 border-t border-slate-800">
                 <p className="text-[8px] text-slate-500 uppercase font-bold tracking-widest mb-2">Mutasi Terakhir</p>
                 <div className="space-y-2">
