@@ -170,6 +170,7 @@ JournalLine:
 - houseId: string
 - name: string
 - category: enum (ALAT PRODUKSI, KENDARAAN, BANGUNAN, LAINNYA)
+- quantity: number
 - purchaseDate: string
 - purchasePrice: number
 - expectedLifeYears: number

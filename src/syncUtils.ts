@@ -37,38 +37,83 @@ const decryptData = (ciphertext: any): any => {
   }
 };
 
-export const syncToDb = async (key: string, data: any) => {
-  // 1. Save locally to IndexedDB (Encrypted)
-  let cleanData = data;
-  while (typeof cleanData === 'string') {
-    try {
-      const parsed = JSON.parse(cleanData);
-      if (typeof parsed === 'object' && parsed !== null) {
-        cleanData = parsed;
-      } else {
-        break;
-      }
-    } catch (e) {
-      break;
+export const syncRecord = async (key: string, record: any) => {
+  if (!record || !record.id) return;
+  
+  // 1. Update/Add to local storage array
+  const encryptedLocalData = await localforage.getItem<string>(key);
+  let data: any[] = [];
+  if (encryptedLocalData) {
+    data = decryptData(encryptedLocalData) || [];
+  }
+  
+  const index = data.findIndex(item => item.id === record.id);
+  if (index !== -1) {
+    data[index] = record;
+  } else {
+    data.push(record);
+  }
+  
+  await localforage.setItem(key, encryptData(data));
+
+  // 2. Sync individual record to backend
+  try {
+    const res = await fetch(`/api/sync/${key}/record`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record)
+    });
+    if (!res.ok) throw new Error('Server error');
+  } catch (error) {
+    console.warn(`[Offline] Queueing individual sync for ${key}:${record.id}`, error);
+    // Add to a specific record-based sync queue if needed, or reuse key-based queue
+    const queue = await localforage.getItem<string[]>('sync_queue') || [];
+    if (!queue.includes(key)) {
+      await localforage.setItem('sync_queue', [...queue, key]);
     }
   }
+};
 
-  // Deduplicate array data by ID to prevent backend ER_DUP_ENTRY
-  if (Array.isArray(cleanData)) {
-    const seen = new Set();
-    cleanData = cleanData.filter(item => {
-      if (item && item.id) {
-        if (seen.has(item.id)) return false;
-        seen.add(item.id);
-      }
-      return true;
+export const deleteRecord = async (key: string, id: string) => {
+  if (!id) return;
+  
+  // 1. Update local storage
+  const encryptedLocalData = await localforage.getItem<string>(key);
+  if (encryptedLocalData) {
+    const data = decryptData(encryptedLocalData) || [];
+    const filtered = data.filter((item: any) => item.id !== id);
+    await localforage.setItem(key, encryptData(filtered));
+  }
+
+  // 2. Sync deletion to backend
+  try {
+    const res = await fetch(`/api/sync/${key}/${id}`, {
+      method: 'DELETE'
     });
+    if (!res.ok) throw new Error('Server error');
+  } catch (error) {
+    console.warn(`[Offline] Queueing deletion for ${key}:${id}`, error);
+    // Add to a generic sync queue
+    const queue = await localforage.getItem<string[]>('sync_queue') || [];
+    if (!queue.includes(key)) {
+      await localforage.setItem('sync_queue', [...queue, key]);
+    }
+  }
+};
+
+export const syncToDb = async (key: string, data: any) => {
+  // Keeping this for compatibility but marking as potentially dangerous for multi-user
+  console.warn(`[Sync] syncToDb called for ${key}. Use syncRecord for incremental updates.`);
+  
+  let cleanData = data;
+  // ... rest of logic stays similar but we should be careful
+  if (typeof cleanData === 'string') {
+    try { cleanData = JSON.parse(cleanData); } catch (e) {}
   }
 
   const encrypted = encryptData(cleanData);
   await localforage.setItem(key, encrypted);
   
-  // 2. Try syncing to Backend (Decrypted / Plain)
   try {
     const res = await fetch(`/api/sync/${key}`, {
       method: 'POST',
@@ -77,8 +122,6 @@ export const syncToDb = async (key: string, data: any) => {
     });
     if (!res.ok) throw new Error('Server error');
   } catch (error) {
-    console.warn(`[Offline] Queueing sync for ${key}`, error);
-    // 3. Add to IndexedDB sync queue
     const queue = await localforage.getItem<string[]>('sync_queue') || [];
     if (!queue.includes(key)) {
       await localforage.setItem('sync_queue', [...queue, key]);
@@ -169,5 +212,24 @@ export const loadFromDbOrIndexedDB = async (key: string, setter: (val: any) => v
     if (decryptedData) {
       setter(decryptedData);
     }
+  }
+};
+
+export const resetAllData = async () => {
+  try {
+    // 1. Reset Backend
+    const res = await fetch('/api/sync/all/reset', { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to reset backend');
+    
+    // 2. Reset LocalForage
+    await localforage.clear();
+    
+    // 3. Reset LocalStorage
+    localStorage.clear();
+    
+    return true;
+  } catch (error) {
+    console.error('Reset error:', error);
+    throw error;
   }
 };

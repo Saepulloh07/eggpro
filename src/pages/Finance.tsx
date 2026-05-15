@@ -27,7 +27,7 @@ import { EggCategory, Asset, AccountCategory, ExpenseCategory, SinkingFundType }
 export default function Finance() {
     const { activeHouse, houses } = useHouse();
     const { getActiveFlockByHouse } = useFlock();
-    const { productionLogs, salesLogs, transactions, addModalAwal, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction, journalEntries, journalLines, apArRecords, accounts, addAPARRecord, updateAPARRecord, addOperationalExpenseRecord, operationalExpenses, sinkingFundAllocations, realizeSinkingFund, getTrialBalance, getAccountBalance, inventory } = useGlobalData();
+    const { productionLogs, salesLogs, transactions, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction, journalEntries, journalLines, apArRecords, accounts, addAPARRecord, updateAPARRecord, addOperationalExpenseRecord, operationalExpenses, sinkingFundAllocations, realizeSinkingFund, getTrialBalance, getAccountBalance, inventory, stockMutations, closeMonth, refreshData, addModalAwal } = useGlobalData();
 
     const [activeTab, setActiveTab] = useState<'BUKU_TELUR' | 'BUKU_TRANSAKSI' | 'ASET' | 'AKUNTANSI' | 'PENGELUARAN' | 'BUKU_BESAR' | 'NERACA_SALDO'>('BUKU_TELUR');
     const [isOpexModalOpen, setIsOpexModalOpen] = useState(false);
@@ -43,6 +43,7 @@ export default function Finance() {
     const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
     const [selectedApArId, setSelectedApArId] = useState<string | null>(null);
     const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
 
     // Pagination State
@@ -62,13 +63,33 @@ export default function Finance() {
     const houseTransactions = isKonsolidasi ? transactions : transactions.filter(t => t.houseId === activeHouse?.id);
 
     // AKUNTANSI FIX 1: Memisahkan Belanja Modal (CapEx) dan Pelunasan dari Beban Operasional (OpEx)
-    const expenseTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && t.category !== 'Aset Tetap' && t.category !== 'Pelunasan');
-    const capexTransactions = houseTransactions.filter(t => t.type === 'EXPENSE' && t.category === 'Aset Tetap');
+    const expenseTransactions = houseTransactions.filter(t => {
+        if (t.type !== 'EXPENSE' || t.category === 'Pelunasan') return false;
+        const account = accounts.find(a => a.id === t.account || a.name === t.account);
+        // Fallback: If account is an asset (e.g. Kas) but it's an EXPENSE type, 
+        // we check if the category is a known operational category.
+        const knownExpenseCategories = ['Pakan', 'Obat', 'Gaji', 'Listrik', 'Air', 'BBM', 'WIFI', 'ATK', 'Konsumsi', 'Sewa', 'Lain-lain'];
+        const isKnownOpEx = t.category && knownExpenseCategories.includes(t.category);
+        
+        return !account || account.category === 'EXPENSE' || isKnownOpEx;
+    });
+
+    const capexTransactions = houseTransactions.filter(t => {
+        if (t.type !== 'EXPENSE') return false;
+        const account = accounts.find(a => a.id === t.account || a.name === t.account);
+        return account?.category === 'ASSET';
+    });
+
     const pelunasanExpenses = houseTransactions.filter(t => t.type === 'EXPENSE' && t.category === 'Pelunasan');
 
-    const incomeTransactions = houseTransactions.filter(t => t.type === 'INCOME' && t.category !== 'Pelunasan');
+    const incomeTransactions = houseTransactions.filter(t => {
+        if (t.type !== 'INCOME' || t.category === 'Pelunasan') return false;
+        const account = accounts.find(a => a.id === t.account || a.name === t.account);
+        return !account || account.category === 'REVENUE';
+    });
+
     const pelunasanIncome = houseTransactions.filter(t => t.type === 'INCOME' && t.category === 'Pelunasan');
-    const modalTransactions = houseTransactions.filter(t => t.type === 'MODAL');
+    const modalTransactions = houseTransactions.filter(t => t.type === 'MODAL' || t.category === 'Modal');
 
     const houseAssets = isKonsolidasi ? assets : assets.filter(a => a.houseId === activeHouse?.id);
 
@@ -86,12 +107,42 @@ export default function Finance() {
     const totalProduction = filteredProdLogs.reduce((acc, curr) => acc + (curr.totalButir ?? (curr as any).totalKg ?? 0), 0);
     const totalSalesTelur = filteredSalesLogs.reduce((acc, curr) => acc + curr.total, 0);
 
-    // AKUNTANSI FIX 2: Total Expenses murni dari OpEx & HPP (tidak termasuk Aset)
-    const totalExpenses = expenseTransactions.reduce((acc, curr) => acc + curr.total, 0);
-    const totalIncome = incomeTransactions.reduce((acc, curr) => acc + curr.total, 0);
-    const totalModalAwal = modalTransactions.reduce((acc, curr) => acc + curr.total, 0);
+    // ACCRUAL FIX: Laba Rugi Berbasis Akrual (Pemakaian & Penjualan Terbukon)
+    const totalAccrualIncome = filteredSalesLogs.reduce((acc, curr) => acc + curr.total, 0);
+    
+    // Usage of materials (pakan/obat)
+    const filteredMutations = isKonsolidasi 
+        ? stockMutations 
+        : stockMutations.filter(m => m.usedByHouseId === activeHouse?.id || (!m.usedByHouseId && m.sourceLocation === activeHouse?.id));
+    const totalUsageCost = filteredMutations
+        .filter(m => m.type === 'USAGE')
+        .reduce((acc, curr) => acc + curr.totalCost, 0);
 
-    const netProfit = totalIncome - totalExpenses;
+    // Operational Expenses
+    const filteredOpEx = isKonsolidasi 
+        ? operationalExpenses 
+        : operationalExpenses.filter(e => e.houseId === activeHouse?.id);
+    const totalOpEx = filteredOpEx.reduce((acc, curr) => acc + curr.amount, 0);
+
+    // Depreciation (Amortization)
+    const calculateDepreciation = (asset: Asset) => {
+        const purchaseDate = new Date(asset.purchaseDate);
+        const today = new Date();
+        const diffMonths = (today.getFullYear() - purchaseDate.getFullYear()) * 12 + (today.getMonth() - purchaseDate.getMonth());
+
+        const salvageValue = asset.salvageValue || 0;
+        const depreciableAmount = asset.purchasePrice - salvageValue;
+
+        // Garis Lurus
+        const totalDepreciation = (depreciableAmount / (asset.expectedLifeYears * 12)) * Math.max(0, diffMonths);
+        return Math.min(depreciableAmount, totalDepreciation);
+    };
+
+    const totalDepreciation = houseAssets.reduce((acc, a) => acc + (calculateDepreciation(a) * (a.quantity || 1)), 0);
+
+    // Net Profit Accrual
+    const netProfit = totalAccrualIncome - totalUsageCost - totalOpEx - totalDepreciation;
+    const totalModalAwal = modalTransactions.reduce((acc, curr) => acc + curr.total, 0);
     const currentCapital = totalModalAwal + netProfit;
 
     const activeFlock = getActiveFlockByHouse(activeHouse?.id || '');
@@ -152,73 +203,73 @@ export default function Finance() {
 
     const paginatedBalanceLogs = productionWithBalance.slice((prodPage - 1) * ITEMS_PER_PAGE, prodPage * ITEMS_PER_PAGE);
 
-    const calculateDepreciation = (asset: Asset) => {
-        const purchaseDate = new Date(asset.purchaseDate);
-        const today = new Date();
-        const diffMonths = (today.getFullYear() - purchaseDate.getFullYear()) * 12 + (today.getMonth() - purchaseDate.getMonth());
 
-        const salvageValue = asset.salvageValue || 0;
-        const depreciableAmount = asset.purchasePrice - salvageValue;
+    const handleUpdateStatus = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedAssetId || isSaving) return;
+        setIsSaving(true);
+        try {
+            const formData = new FormData(e.target as HTMLFormElement);
+            const status = formData.get('status') as any;
+            const notes = formData.get('notes') as string;
+            const user = "Owner / Admin";
 
-        // Garis Lurus
-        const totalDepreciation = (depreciableAmount / (asset.expectedLifeYears * 12)) * Math.max(0, diffMonths);
-        return Math.min(depreciableAmount, totalDepreciation);
+            await updateAssetStatus(selectedAssetId, status, user, notes);
+            Swal.fire({ title: 'Berhasil!', text: 'Status aset telah diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
+            setIsMaintenanceModalOpen(false);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const handleUpdateStatus = (e: React.FormEvent) => {
+    const handleSaveAsset = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedAssetId) return;
-        const formData = new FormData(e.target as HTMLFormElement);
-        const status = formData.get('status') as any;
-        const notes = formData.get('notes') as string;
-        const user = "Owner / Admin";
+        if (isSaving) return;
+        setIsSaving(true);
+        try {
+            const formData = new FormData(e.target as HTMLFormElement);
 
-        updateAssetStatus(selectedAssetId, status, user, notes);
-        Swal.fire({ title: 'Berhasil!', text: 'Status aset telah diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
-        setIsMaintenanceModalOpen(false);
-    };
+            const name = formData.get('name') as string;
+            const category = formData.get('category') as string;
+            const quantity = Number(formData.get('quantity') || 1);
+            const purchasePrice = Number(formData.get('purchasePrice'));
+            const salvageValue = Number(formData.get('salvageValue') || 0);
+            const purchaseDate = formData.get('purchaseDate') as string;
+            const expectedLifeYears = Number(formData.get('expectedLifeYears'));
 
-    const handleSaveAsset = (e: React.FormEvent) => {
-        e.preventDefault();
-        const formData = new FormData(e.target as HTMLFormElement);
-
-        const name = formData.get('name') as string;
-        const category = formData.get('category') as string;
-        const purchasePrice = Number(formData.get('purchasePrice'));
-        const salvageValue = Number(formData.get('salvageValue') || 0);
-        const purchaseDate = formData.get('purchaseDate') as string;
-        const expectedLifeYears = Number(formData.get('expectedLifeYears'));
-
-        if (editingAsset) {
-            updateAsset(editingAsset.id, {
-                name, category, purchasePrice, salvageValue, purchaseDate, expectedLifeYears,
-            });
-            Swal.fire({ title: 'Berhasil!', text: 'Aset telah diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
-        } else {
-            addAsset({
-                houseId: activeHouse?.id || '', name, category, purchasePrice, salvageValue, purchaseDate, expectedLifeYears, condition: 'BAIK'
-            });
-
-            // AKUNTANSI FIX 3: Kategori dibuat spesifik agar bisa di-filter keluar dari Opex
-            if (assetOwnershipType === 'BELI') {
-                const accountId = formData.get('accountId') as string;
-                const selectedAcc = accounts.find(a => a.id === accountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
-
-                addTransaction({
-                    houseId: activeHouse?.id,
-                    date: purchaseDate,
-                    description: `Pembelian Aset: ${name} (${category})`,
-                    qty: '1 Unit',
-                    price: purchasePrice,
-                    total: purchasePrice,
-                    account: selectedAcc.name,
-                    type: 'EXPENSE',
-                    category: 'Aset Tetap' // Diganti agar tidak masuk ke Laba Rugi Operasional
+            if (editingAsset) {
+                await updateAsset(editingAsset.id, {
+                    name, category, quantity, purchasePrice, salvageValue, purchaseDate, expectedLifeYears,
                 });
-                Swal.fire({ title: 'Berhasil!', text: 'Aset telah didaftarkan dan tercatat di Buku Kas (sebagai CapEx).', icon: 'success', confirmButtonColor: '#0f172a' });
+                Swal.fire({ title: 'Berhasil!', text: 'Aset telah diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
             } else {
-                Swal.fire({ title: 'Berhasil!', text: 'Aset (Milik Pribadi) telah didaftarkan.', icon: 'success', confirmButtonColor: '#0f172a' });
+                await addAsset({
+                    houseId: activeHouse?.id || '', name, category, quantity, purchasePrice, salvageValue, purchaseDate, expectedLifeYears, condition: 'BAIK'
+                });
+
+                // AKUNTANSI FIX 3: Kategori dibuat spesifik agar bisa di-filter keluar dari Opex
+                if (assetOwnershipType === 'BELI') {
+                    const accountId = formData.get('accountId') as string;
+                    const selectedAcc = accounts.find(a => a.id === accountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
+
+                    await addTransaction({
+                        houseId: activeHouse?.id,
+                        date: purchaseDate,
+                        description: `Pembelian Aset: ${name} (${category})`,
+                        qty: `${quantity} Unit`,
+                        price: purchasePrice,
+                        total: purchasePrice * quantity,
+                        account: selectedAcc.name,
+                        type: 'EXPENSE',
+                        category: 'Aset Tetap'
+                    });
+                    Swal.fire({ title: 'Berhasil!', text: 'Aset telah didaftarkan dan tercatat di Buku Kas (sebagai CapEx).', icon: 'success', confirmButtonColor: '#0f172a' });
+                } else {
+                    Swal.fire({ title: 'Berhasil!', text: 'Aset (Milik Pribadi) telah didaftarkan.', icon: 'success', confirmButtonColor: '#0f172a' });
+                }
             }
+        } finally {
+            setIsSaving(false);
         }
 
         setIsAssetModalOpen(false);
@@ -342,13 +393,13 @@ export default function Finance() {
         sl.columns = [35, 22].map(w => ({ width: w }));
         addSheetTitle(sl, 'LAPORAN LABA RUGI', `Periode s/d ${new Date().toLocaleDateString('id-ID')} · ${activeHouse?.name || 'Semua Kandang'}`, 2);
 
-        const labaKotor = totalIncome - totalBahan;
+        const labaKotor = totalAccrualIncome - totalBahan;
 
         const labaData: [string, number | string, boolean][] = [
             ['PENDAPATAN', '', false],
             ['  Penjualan Telur', totalPenjualan, false],
-            ['  Lain-lain (Pendapatan Lainnya)', totalIncome - totalPenjualan > 0 ? totalIncome - totalPenjualan : 0, false],
-            ['TOTAL PENDAPATAN', totalIncome, true],
+            ['  Lain-lain (Pendapatan Lainnya)', totalAccrualIncome - totalPenjualan > 0 ? totalAccrualIncome - totalPenjualan : 0, false],
+            ['TOTAL PENDAPATAN', totalAccrualIncome, true],
             ['', '', false],
             ['HARGA POKOK PRODUKSI (HPP)', '', false],
             ['  Beban Bahan Baku & Pakan', totalBahan, false],
@@ -381,16 +432,17 @@ export default function Finance() {
 
         // ── SHEET 5: ASET & PENYUSUTAN ──
         const s4 = wb.addWorksheet('ASET');
-        s4.columns = [6, 28, 20, 14, 18, 12, 18, 18].map(w => ({ width: w }));
-        addSheetTitle(s4, 'DAFTAR ASET & PENYUSUTAN', `Metode: Garis Lurus · ${new Date().toLocaleDateString('id-ID')}`, 8);
-        s4.getRow(4).values = ['No', 'Nama Aset', 'Kategori', 'Tgl Perolehan', 'Nilai Beli (Rp)', 'Kondisi', 'Akum. Penyusutan (Rp)', 'Nilai Buku (Rp)'];
-        [1, 2, 3, 4, 5, 6, 7, 8].forEach(ci => styleHeader(s4.getCell(4, ci), DARK));
+        s4.columns = [6, 28, 20, 10, 14, 18, 12, 18, 18].map(w => ({ width: w }));
+        addSheetTitle(s4, 'DAFTAR ASET & PENYUSUTAN', `Metode: Garis Lurus · ${new Date().toLocaleDateString('id-ID')}`, 9);
+        s4.getRow(4).values = ['No', 'Nama Aset', 'Kategori', 'Qty', 'Tgl Perolehan', 'Nilai Beli (Rp)', 'Kondisi', 'Akum. Penyusutan (Rp)', 'Nilai Buku (Rp)'];
+        [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach(ci => styleHeader(s4.getCell(4, ci), DARK));
         s4.getRow(4).height = 22;
         houseAssets.forEach((asset, i) => {
-            const dep = calculateDepreciation(asset); const r = 5 + i;
-            s4.getRow(r).values = [i + 1, asset.name, asset.category, new Date(asset.purchaseDate).toLocaleDateString('id-ID'), asset.purchasePrice, asset.condition, dep, asset.purchasePrice - dep];
-            [1, 2, 3, 4, 5, 6, 7, 8].forEach(ci => styleData(s4.getCell(r, ci), i % 2 === 1));
-            [5, 7, 8].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
+            const qty = asset.quantity || 1;
+            const dep = calculateDepreciation(asset) * qty; const r = 5 + i;
+            s4.getRow(r).values = [i + 1, asset.name, asset.category, qty, new Date(asset.purchaseDate).toLocaleDateString('id-ID'), asset.purchasePrice, asset.condition, dep, (asset.purchasePrice * qty) - dep];
+            [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach(ci => styleData(s4.getCell(r, ci), i % 2 === 1));
+            [6, 8, 9].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
         });
 
         // ── SHEET: BUKU KAS UMUM ──
@@ -445,7 +497,30 @@ export default function Finance() {
         saveAs(new Blob([buffer]), `Laporan_Keuangan_${activeHouse?.name || 'Farm'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
-    const handleAddModalSubmit = (e: React.FormEvent) => {
+
+
+    const handleCloseMonth = () => {
+        Swal.fire({
+            title: 'Tutup Buku Bulanan?',
+            text: 'Proses ini akan menghitung penyusutan aset dan mengunci jurnal periode berjalan. Lanjutkan?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Ya, Tutup Buku',
+            cancelButtonText: 'Batal'
+        }).then(async (result) => {
+            if (result.isConfirmed) {
+                try {
+                    const ym = new Date().toISOString().slice(0, 7); // YYYY-MM
+                    await closeMonth(ym, 'Admin');
+                    Swal.fire('Berhasil', 'Tutup buku berhasil. Semua penyusutan otomatis telah dijurnal.', 'success');
+                } catch (e: any) {
+                    Swal.fire('Gagal', e.message, 'error');
+                }
+            }
+        });
+    };
+
+    const handleAddModalSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const formData = new FormData(e.target as HTMLFormElement);
         const amount = Number(formData.get('amount'));
@@ -455,10 +530,10 @@ export default function Finance() {
             const accountId = formData.get('accountId') as string;
             const houseId = formData.get('houseId') as string;
             if (editingModal) {
-                updateTransaction(editingModal.id, { total: amount, price: amount, description: desc, houseId });
+                await updateTransaction(editingModal.id, { total: amount, price: amount, description: desc, houseId });
                 Swal.fire({ title: 'Berhasil!', text: 'Modal telah diubah.', icon: 'success', confirmButtonColor: '#0f172a' });
             } else {
-                addModalAwal(amount, desc, houseId, accountId);
+                await addModalAwal(amount, desc, houseId, accountId);
                 Swal.fire({ title: 'Berhasil!', text: 'Modal telah ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a' });
             }
             setIsModalAwalOpen(false);
@@ -544,15 +619,19 @@ export default function Finance() {
                                 className="hidden md:flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-slate-800 transition-all shadow-sm">
                                 <Download size={13} /> Export
                             </button>
+                            <button onClick={handleCloseMonth}
+                                className="hidden md:flex items-center gap-1.5 bg-rose-600 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-rose-700 transition-all shadow-sm">
+                                Tutup Buku
+                            </button>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
                         {[
-                            { label: 'Total Pemasukan', val: formatCurrency(totalIncome), color: 'text-emerald-600', bg: 'bg-emerald-50', Icon: TrendingUp },
-                            { label: 'Total Pengeluaran (Non-Aset)', val: formatCurrency(totalExpenses), color: 'text-rose-600', bg: 'bg-rose-50', Icon: TrendingDown },
+                            { label: 'Pendapatan (Accrual)', val: formatCurrency(totalAccrualIncome), color: 'text-emerald-600', bg: 'bg-emerald-50', Icon: TrendingUp },
+                            { label: 'Beban Pemakaian & Ops', val: formatCurrency(totalUsageCost + totalOpEx + totalDepreciation), color: 'text-rose-600', bg: 'bg-rose-50', Icon: TrendingDown },
                             { label: 'Laba / Rugi Bersih', val: (netProfit >= 0 ? '+' : '') + formatCurrency(netProfit), color: netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700', bg: netProfit >= 0 ? 'bg-emerald-100' : 'bg-rose-100', Icon: netProfit >= 0 ? CheckCircle : XCircle },
-                            { label: 'Modal Akhir', val: formatCurrency(currentCapital), color: 'text-amber-700', bg: 'bg-amber-50', Icon: CircleDollarSign },
+                            { label: 'Estimasi Modal', val: formatCurrency(currentCapital), color: 'text-amber-700', bg: 'bg-amber-50', Icon: CircleDollarSign },
                         ].map(kpi => (
                             <div key={kpi.label} className={cn('p-3 rounded-lg border', kpi.bg, 'border-opacity-50')}>
                                 <div className="flex items-center gap-1.5 mb-0.5">
@@ -608,7 +687,15 @@ export default function Finance() {
                                             <span className="text-[11px] font-black text-slate-700">{formatCurrency(totalModalAwal)}</span>
                                         </div>
                                         <div className="flex justify-between items-center">
-                                            <span className="text-[10px] text-slate-500 font-bold">Laba/Rugi</span>
+                                            <span className="text-[10px] text-slate-500 font-bold">HPP (Pemakaian)</span>
+                                            <span className="text-[11px] font-black text-rose-600">-{formatCurrency(totalUsageCost)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] text-slate-500 font-bold">Penyusutan Aset</span>
+                                            <span className="text-[11px] font-black text-rose-400">-{formatCurrency(totalDepreciation)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] text-slate-500 font-bold">Laba/Rugi (Accrual)</span>
                                             <span className={cn("text-[11px] font-black", netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600')}>{netProfit >= 0 ? '+' : ''}{formatCurrency(netProfit)}</span>
                                         </div>
                                         <div className="flex justify-between items-center border-t border-slate-100 pt-2">
@@ -815,14 +902,18 @@ export default function Finance() {
                                     : 0;
 
                                 // TOTAL HPP DASAR
+                                const totalKgProduksi = filteredProdLogs.reduce((s, l) => s + (l.eggWeight || 0), 0);
                                 const totalBiayaProduksi = totalBiayaPakanKonsumsi + totalGaji + totalFOH + ((depLayerPerButir + depCagePerButir) * totalButirProduksi);
                                 const hppDasar = totalButirProduksi > 0 ? totalBiayaProduksi / totalButirProduksi : 0;
+                                const hppKgDasar = totalKgProduksi > 0 ? totalBiayaProduksi / totalKgProduksi : 0;
                                 
                                 // HPP dengan Cadangan Risiko
                                 const hppBase = hppDasar + (totalButirProduksi > 0 ? hppCadangan / totalButirProduksi : 0);
+                                const hppKgBase = hppKgDasar + (totalKgProduksi > 0 ? hppCadangan / totalKgProduksi : 0);
 
                                 // Estimasi Harga Jual (Markup Strategy)
                                 const hargaJualBase = hppBase * (1 + hppMarginPct / 100);
+                                const hargaJualKgBase = hppKgBase * (1 + hppMarginPct / 100);
 
 
 
@@ -872,9 +963,9 @@ export default function Finance() {
                                                         />
                                                     </div>
                                                     <div className="text-right">
-                                                        <p className="text-[9px] text-slate-400 font-bold uppercase">Harga Jual / Butir (Grade A)</p>
-                                                        <p className="text-xl font-black text-amber-700">{formatCurrency(Math.ceil(hargaJualBase / 50) * 50)}</p>
-                                                        <p className="text-[9px] text-slate-400">HPP Dasar: {formatCurrency(hppBase)}</p>
+                                                        <p className="text-[9px] text-slate-400 font-bold uppercase">Harga Jual / Kg (Grade A)</p>
+                                                        <p className="text-xl font-black text-amber-700">{formatCurrency(Math.ceil(hargaJualKgBase / 100) * 100)}</p>
+                                                        <p className="text-[9px] text-slate-400">HPP / Kg: {formatCurrency(hppKgBase)} | Per Butir: {formatCurrency(hppBase)}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -904,8 +995,8 @@ export default function Finance() {
                                                 )}
                                                 <div className="mt-3 p-3 bg-slate-900 rounded-lg text-white">
                                                     <div className="flex justify-between text-[9px] mb-1">
-                                                        <span className="text-slate-400 font-bold">Total Butir Diproduksi</span>
-                                                        <span className="font-black">{totalButirProduksi.toLocaleString()} butir</span>
+                                                        <span className="text-slate-400 font-bold">Total Produksi</span>
+                                                        <span className="font-black">{totalButirProduksi.toLocaleString()} btr / {totalKgProduksi.toFixed(1)} kg</span>
                                                     </div>
                                                     <div className="flex justify-between text-[9px] mb-1">
                                                         <span className="text-slate-400 font-bold">Total Biaya Produksi (COGS)</span>
@@ -916,8 +1007,12 @@ export default function Finance() {
                                                         <span className="font-black text-orange-400">{formatCurrency(hppCadangan)}</span>
                                                     </div>
                                                     <div className="border-t border-slate-700 pt-1 mt-1 flex justify-between text-[10px]">
-                                                        <span className="text-amber-400 font-black">HPP / Butir</span>
-                                                        <span className="font-black text-amber-400">{formatCurrency(hppBase)}</span>
+                                                        <span className="text-amber-400 font-black">HPP / Kg</span>
+                                                        <span className="font-black text-amber-400">{formatCurrency(hppKgBase)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-[10px]">
+                                                        <span className="text-slate-400 font-black">HPP / Butir</span>
+                                                        <span className="font-black text-slate-400">{formatCurrency(hppBase)}</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1259,8 +1354,9 @@ export default function Finance() {
                             {activeTab === 'ASET' && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {houseAssets.map((asset) => {
-                                        const depreciation = calculateDepreciation(asset);
-                                        const currentValue = asset.purchasePrice - depreciation;
+                                        const qty = asset.quantity || 1;
+                                        const depreciation = calculateDepreciation(asset) * qty;
+                                        const currentValue = (asset.purchasePrice * qty) - depreciation;
                                         return (
                                             <div
                                                 key={asset.id}
@@ -1273,7 +1369,7 @@ export default function Finance() {
                                                 <div className="flex justify-between items-start">
                                                     <div>
                                                         <div className="flex items-center gap-2">
-                                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{asset.category}</p>
+                                                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{asset.category} · Qty: {qty}</p>
                                                             <button onClick={(e) => { e.stopPropagation(); setEditingAsset(asset); setIsAssetModalOpen(true); }} className="text-slate-400 hover:text-amber-500"><Edit2 size={12} /></button>
                                                         </div>
                                                         <h4 className="font-bold text-slate-800 mt-1 uppercase tracking-tight">{asset.name}</h4>
@@ -1289,16 +1385,16 @@ export default function Finance() {
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                                                     <div>
-                                                        <p className="text-[8px] font-bold text-slate-400 uppercase">Nilai Awal</p>
+                                                        <p className="text-[8px] font-bold text-slate-400 uppercase">Harga/Unit</p>
                                                         <p className="text-xs font-black text-slate-600">{formatCurrency(asset.purchasePrice)}</p>
                                                     </div>
                                                     <div>
-                                                        <p className="text-[8px] font-bold text-slate-400 uppercase">Penyusutan</p>
+                                                        <p className="text-[8px] font-bold text-slate-400 uppercase">Total Penyusutan</p>
                                                         <p className="text-xs font-black text-rose-500">-{formatCurrency(depreciation)}</p>
                                                     </div>
                                                 </div>
                                                 <div className="bg-slate-900 p-3 flex justify-between items-center">
-                                                    <span className="text-[8px] font-bold text-slate-400 uppercase">Nilai Buku Saat Ini</span>
+                                                    <span className="text-[8px] font-bold text-slate-400 uppercase">Nilai Buku (Total)</span>
                                                     <span className="text-xs font-black text-amber-500">{formatCurrency(currentValue)}</span>
                                                 </div>
                                             </div>
@@ -1575,9 +1671,13 @@ export default function Finance() {
                             <option value="Lainnya">Lainnya</option>
                         </select>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Harga Beli / Estimasi Nilai (IDR)</label>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jumlah (Qty)</label>
+                            <input name="quantity" required type="number" min="1" defaultValue={editingAsset?.quantity || 1} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Harga Satuan (IDR)</label>
                             <input name="purchasePrice" required type="number" defaultValue={editingAsset?.purchasePrice} placeholder="Cth: 5000000" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
                         </div>
                         <div>
@@ -1603,13 +1703,14 @@ export default function Finance() {
                             </select>
                         </div>
                     )}
-                    <button type="submit" className={cn(
+                    <button type="submit" disabled={isSaving} className={cn(
                         "w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] transition-all",
+                        isSaving ? "bg-slate-400 cursor-not-allowed" :
                         assetOwnershipType === 'MILIK_PRIBADI'
                             ? "bg-slate-800 text-white hover:bg-slate-700"
                             : "bg-slate-900 text-white hover:bg-slate-800"
                     )}>
-                        {editingAsset ? "Simpan Perubahan" : assetOwnershipType === 'MILIK_PRIBADI' ? "Daftarkan sebagai Milik Pribadi" : "Daftarkan Aset & Catat Pengeluaran"}
+                        {isSaving ? "Memproses..." : editingAsset ? "Simpan Perubahan" : assetOwnershipType === 'MILIK_PRIBADI' ? "Daftarkan sebagai Milik Pribadi" : "Daftarkan Aset & Catat Pengeluaran"}
                     </button>
                 </form>
             </Modal>
@@ -1693,20 +1794,24 @@ export default function Finance() {
             </Modal>
 
             <Modal isOpen={isOpexModalOpen} onClose={() => setIsOpexModalOpen(false)} title="Tambah Pengeluaran Harian">
-                <form onSubmit={(e) => {
+                <form onSubmit={async (e) => {
                     e.preventDefault();
                     const fd = new FormData(e.target as HTMLFormElement);
-                    addOperationalExpenseRecord({
-                        houseId: activeHouse?.id,
-                        date: fd.get('date') as string,
-                        category: fd.get('category') as string,
-                        description: fd.get('description') as string,
-                        amount: Number(fd.get('amount')),
-                        accountId: fd.get('accountId') as string,
-                        paymentAccountId: fd.get('paymentAccountId') as string,
-                    });
-                    setIsOpexModalOpen(false);
-                    Swal.fire({ title: 'Berhasil!', text: 'Pengeluaran harian telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
+                    try {
+                        await addOperationalExpenseRecord({
+                            houseId: activeHouse?.id,
+                            date: fd.get('date') as string,
+                            category: fd.get('category') as string,
+                            description: fd.get('description') as string,
+                            amount: Number(fd.get('amount')),
+                            accountId: fd.get('accountId') as string,
+                            paymentAccountId: fd.get('paymentAccountId') as string,
+                        });
+                        setIsOpexModalOpen(false);
+                        Swal.fire({ title: 'Berhasil!', text: 'Pengeluaran harian telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
+                    } catch (err: any) {
+                        Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+                    }
                 }} className="space-y-5">
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -1750,12 +1855,16 @@ export default function Finance() {
                         Dana peremajaan dicatat sebagai alokasi dari keuntungan operasional untuk membiayai penggantian ayam (DOC baru) atau renovasi kandang di masa mendatang. Dana ini dijurnal sebagai <span className="font-black">Debit: Dana Cadangan</span>.
                     </p>
                 </div>
-                <form onSubmit={(e) => {
+                <form onSubmit={async (e) => {
                     e.preventDefault();
                     const fd = new FormData(e.target as HTMLFormElement);
-                    realizeSinkingFund(Number(fd.get('amount')), fd.get('type') as SinkingFundType, activeHouse?.id, fd.get('notes') as string);
-                    setIsSinkingModalOpen(false);
-                    Swal.fire({ title: 'Berhasil!', text: 'Dana peremajaan telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
+                    try {
+                        await realizeSinkingFund(Number(fd.get('amount')), fd.get('type') as SinkingFundType, activeHouse?.id, fd.get('notes') as string);
+                        setIsSinkingModalOpen(false);
+                        Swal.fire({ title: 'Berhasil!', text: 'Dana peremajaan telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
+                    } catch (err: any) {
+                        Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+                    }
                 }} className="space-y-5">
                     <div>
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Tujuan Dana Peremajaan</label>

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { FlockBatch, PopulationMutation, MutationType, MortalityCause } from './types';
 import { useGlobalData } from './GlobalContext';
-import { syncToDb, loadFromDbOrIndexedDB } from './syncUtils';
+import { syncToDb, syncRecord, deleteRecord, loadFromDbOrIndexedDB } from './syncUtils';
 
 interface FlockContextType {
   flocks: FlockBatch[];
@@ -10,8 +10,8 @@ interface FlockContextType {
   updateFlock: (id: string, updates: Partial<FlockBatch>) => void;
   deleteFlock: (id: string) => void;
   getActiveFlockByHouse: (houseId: string) => FlockBatch | undefined;
-  addMutation: (mutation: Omit<PopulationMutation, 'id'>) => void;
-  deleteMutation: (id: string) => void;
+  addMutation: (mutation: Omit<PopulationMutation, 'id'>) => Promise<void>;
+  deleteMutation: (id: string) => Promise<void>;
 }
 
 
@@ -23,31 +23,42 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [mutations, setMutations] = useState<PopulationMutation[]>([]);
 
   useEffect(() => {
-    if (flocks.length > 0) syncToDb('poultry_flocks', flocks);
-  }, [flocks]);
-
-  useEffect(() => {
-    if (mutations.length > 0) syncToDb('poultry_mutations', mutations);
-  }, [mutations]);
-
-  useEffect(() => {
     loadFromDbOrIndexedDB('poultry_flocks', setFlocks);
     loadFromDbOrIndexedDB('poultry_mutations', setMutations);
   }, []);
 
-  const addFlock = (flockData: Omit<FlockBatch, 'id'>) => {
-    const newFlock: FlockBatch = {
-      ...flockData,
-      id: `f${Date.now()}`
-    };
+  const generateUUID = () => {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+      try {
+        return window.crypto.randomUUID();
+      } catch (e) {}
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
 
-    // If setting as active, deactivate other flocks in the same house
+  const addFlock = (flockData: Omit<FlockBatch, 'id'>) => {
+    const id = generateUUID();
+    const newFlock: FlockBatch = { ...flockData, id };
+
     if (newFlock.isActive) {
-      setFlocks(prev => prev.map(f =>
-        f.houseId === newFlock.houseId ? { ...f, isActive: false } : f
-      ).concat(newFlock));
+      setFlocks(prev => {
+        const updated = prev.map(f => {
+          if (f.houseId === newFlock.houseId && f.isActive) {
+            const deactivated = { ...f, isActive: false };
+            syncRecord('poultry_flocks', deactivated);
+            return deactivated;
+          }
+          return f;
+        }).concat(newFlock);
+        syncRecord('poultry_flocks', newFlock);
+        return updated;
+      });
     } else {
       setFlocks(prev => [...prev, newFlock]);
+      syncRecord('poultry_flocks', newFlock);
     }
   };
 
@@ -55,6 +66,7 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setFlocks(prev => prev.map(f => {
       if (f.id === id) {
         const updated = { ...f, ...updates };
+        syncRecord('poultry_flocks', updated);
         return updated;
       }
       return f;
@@ -64,27 +76,33 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setFlocks(prev => {
         const target = prev.find(f => f.id === id);
         if (!target) return prev;
-        return prev.map(f =>
-          (f.houseId === target.houseId && f.id !== id) ? { ...f, isActive: false } : f
-        );
+        return prev.map(f => {
+          if (f.houseId === target.houseId && f.id !== id && f.isActive) {
+            const deactivated = { ...f, isActive: false };
+            syncRecord('poultry_flocks', deactivated);
+            return deactivated;
+          }
+          return f;
+        });
       });
     }
   };
 
   const deleteFlock = (id: string) => {
     setFlocks(prev => prev.filter(f => f.id !== id));
+    deleteRecord('poultry_flocks', id);
   };
 
   const getActiveFlockByHouse = (houseId: string) => {
     return flocks.find(f => f.houseId === houseId && f.isActive);
   };
 
-  const addMutation = (mutData: Omit<PopulationMutation, 'id'>) => {
+  const addMutation = async (mutData: Omit<PopulationMutation, 'id'>) => {
     let transactionId: string | undefined;
 
     // Financial Integration (Add transaction first to get ID)
     if (mutData.type === MutationType.ARRIVAL && mutData.totalPrice) {
-      transactionId = addTransaction({
+      transactionId = await addTransaction({
         houseId: mutData.houseId,
         date: mutData.date,
         description: `Pembelian DOC: ${mutData.count} ekor @ Rp${mutData.pricePerBird?.toLocaleString()}`,
@@ -98,7 +116,7 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     if (mutData.type === MutationType.CULLING && mutData.totalPrice) {
-      transactionId = addTransaction({
+      transactionId = await addTransaction({
         houseId: mutData.houseId,
         date: mutData.date,
         description: `Penjualan Ayam Afkir: ${mutData.count} ekor @ Rp${mutData.pricePerBird?.toLocaleString()}`,
@@ -111,12 +129,14 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
+    const id = generateUUID();
     const newMut: PopulationMutation = { 
       ...mutData, 
-      id: `mut-${Date.now()}`,
+      id,
       transactionId 
     };
     setMutations(prev => [newMut, ...prev]);
+    syncRecord('poultry_mutations', newMut);
 
     // Update Flock Counts
     setFlocks(prev => prev.map(f => {
@@ -136,11 +156,12 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
   };
 
-  const deleteMutation = (id: string) => {
+  const deleteMutation = async (id: string) => {
     const mut = mutations.find(m => m.id === id);
     if (!mut) return;
 
     setMutations(prev => prev.filter(m => m.id !== id));
+    deleteRecord('poultry_mutations', id);
 
     // Rollback Flock Counts
     setFlocks(prev => prev.map(f => {
@@ -160,7 +181,7 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Delete linked transaction
     if (mut.transactionId) {
-      deleteTransaction(mut.transactionId);
+      await deleteTransaction(mut.transactionId);
     }
   };
 

@@ -97,7 +97,10 @@ function KpiCard({ label, value, sub, icon: Icon, trend, trendLabel, accentClass
 export default function Dashboard() {
   const { activeHouse } = useHouse();
   const { getActiveFlockByHouse, mutations } = useFlock();
-  const { productionLogs, salesLogs, inventory, mortalityRecords, transactions, farmSettings } = useGlobalData();
+  const { 
+    productionLogs, salesLogs, inventory, mortalityRecords, 
+    transactions, farmSettings, getFlockAnalytics 
+  } = useGlobalData();
 
 
   const [chartPeriod, setChartPeriod] = useState<'HARIAN' | 'MINGGUAN' | 'BULANAN'>('HARIAN');
@@ -214,8 +217,8 @@ export default function Dashboard() {
   const todayHDP = lastLog && currentCount > 0 ? (lastLog.eggCount / currentCount) * 100 : 0;
 
   const totalFeed = houseLogs.reduce((a, b) => a + b.feedConsumed, 0);
-  const totalButirCount = houseLogs.reduce((a, b) => a + (b.totalButir ?? (b as any).totalKg ?? 0), 0);
-  const cumulativeFCR = totalButirCount > 0 ? totalFeed / totalButirCount : 0;
+  const totalEggWeightKg = houseLogs.reduce((a, b) => a + (b.eggWeight || 0), 0);
+  const cumulativeFCR = totalEggWeightKg > 0 ? totalFeed / totalEggWeightKg : 0;
 
   const feedIntakePerBird = lastLog && currentCount > 0 ? (lastLog.feedConsumed * 1000) / currentCount : 0;
 
@@ -233,11 +236,16 @@ export default function Dashboard() {
   const feedItems = inventory.filter(i => (i.type === 'FINISHED_FEED' || i.type === 'RAW_MATERIAL') && i.houseId === activeHouse?.id);
   const lowStockItems = feedItems.filter(i => i.quantity <= i.reorderPoint);
 
-  // ── Revenue from sales ──────────────────────────────────────────────────────
-  const houseSales = salesLogs.filter(s => s.houseId === activeHouse?.id && !s.isFree);
-  const totalRevenue = houseSales.reduce((a, b) => a + b.total, 0);
-  const totalExpenses = transactions.filter(t => t.type === 'EXPENSE' && t.houseId === activeHouse?.id).reduce((a, b) => a + b.total, 0);
-  const netPL = totalRevenue - totalExpenses;
+  // ── Financial Analytics (Centralized HPP & P&L) ──────────────────────────
+  const analytics = useMemo(() => 
+    getFlockAnalytics(activeHouse?.id || '', currentCount),
+    [getFlockAnalytics, activeHouse, currentCount]
+  );
+  
+  const netPL = analytics.netPL || 0;
+  const totalRevenue = salesLogs
+    .filter(s => s.houseId === activeHouse?.id && !s.isFree)
+    .reduce((a, b) => a + b.total, 0);
 
   // ── Egg breakdown summary (last log) ──────────────────────────────────────
   const eggBreakdownData = lastLog && lastLog.breakdown ? [

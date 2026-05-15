@@ -30,13 +30,17 @@ import { useApp } from '../AppContext';
 import { useFlock } from '../FlockContext';
 import Modal from '../components/Modal';
 import { useGlobalData } from '../GlobalContext';
+import { resetAllData } from '../syncUtils';
 
 export default function Settings() {
   const [activeSection, setActiveSection] = useState('HOUSES');
   const { houses, addHouse, updateHouse, deleteHouse, selectedHouseId } = useHouse();
   const { users, addUser, updateUser, deleteUser, sidebarPermissions, updatePermissions } = useApp();
   const { flocks, addFlock, updateFlock, deleteFlock } = useFlock();
-  const { farmSettings, saveFarmSettings, accounts, addAccount, updateAccount, deleteAccount } = useGlobalData();
+  const { 
+    farmSettings, saveFarmSettings, accounts, addAccount, updateAccount, deleteAccount,
+    productionLogs, salesLogs, transactions, inventory, journalEntries, journalLines
+  } = useGlobalData();
   
   // --- House Management State ---
   const [isHouseModalOpen, setIsHouseModalOpen] = useState(false);
@@ -104,6 +108,7 @@ export default function Settings() {
     stdFeedIntake: farmSettings.stdFeedIntake,
     wasteFreePercentage: farmSettings.wasteFreePercentage,
     workerEggAllowancePerDay: farmSettings.workerEggAllowancePerDay ?? 5,
+    lastClosingDate: farmSettings.lastClosingDate || '2020-01-01',
   });
   const [targetSaved, setTargetSaved] = React.useState(false);
 
@@ -528,35 +533,6 @@ export default function Settings() {
                     </motion.div>
                 )}
 
-                {activeSection === 'DATA' && (
-                    <motion.div 
-                        initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }}
-                        key="data" className="space-y-8"
-                    >
-                        <div className="bg-white p-8 border border-slate-200 shadow-sm space-y-8 relative overflow-hidden">
-                            <div className="flex items-center space-x-6">
-                                <div className="p-4 bg-slate-50 border border-slate-100 text-slate-500">
-                                    <RotateCcw size={32} strokeWidth={1.5} />
-                                </div>
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight italic">Registry Integrity & Backup</h3>
-                                    <p className="text-xs text-slate-500 mt-1 uppercase font-bold italic tracking-tighter opacity-70">Archive snapshot of production cycle (24 Months Cycle).</p>
-                                </div>
-                            </div>
-                            
-                            <div className="p-6 bg-slate-50 border border-slate-100 flex items-center justify-between shadow-inner">
-                                <div className="flex items-center space-x-4">
-                                    <Database size={20} className="text-amber-600" />
-                                    <div>
-                                        <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">Main Archive Node</p>
-                                        <p className="text-[9px] text-slate-400 font-black italic uppercase tracking-tighter">Last Snapshot: 1 hour ago</p>
-                                    </div>
-                                </div>
-                                <button className="bg-slate-900 text-white px-6 py-3 rounded-sm text-[10px] font-bold uppercase tracking-widest hover:bg-slate-800 shadow-md border border-slate-800 transition-colors">Export SQL/CSV</button>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
 
                 {activeSection === 'FLOCKS' && (
                     <motion.div
@@ -775,22 +751,18 @@ export default function Settings() {
                                                 <span>0%</span><span>5%</span><span>10%</span>
                                             </div>
                                         </div>
-                                        <div className="bg-slate-50 border border-slate-100 p-4 space-y-1">
+                                        <div className="bg-slate-900 border border-slate-800 p-4 space-y-1 shadow-lg">
                                             <div className="flex items-center justify-between">
-                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-700">Ambang Batas Telur Karyawan (butir/hari)</label>
-                                                <span className="text-[9px] text-emerald-600 font-black">{targetForm.workerEggAllowancePerDay} butir</span>
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-amber-500">Periode Penutupan (Lock Date)</label>
+                                                <span className="text-[9px] text-white font-black flex items-center gap-1"><Shield size={10} /> TERKUNCI</span>
                                             </div>
-                                            <p className="text-[9px] text-slate-400 mb-2">Jumlah telur yang otomatis dikurangi dari stok gudang per hari sebagai jatah karyawan. Sistem akan memotong dari stok yang ada secara otomatis. Default: 5 butir/hari.</p>
+                                            <p className="text-[9px] text-slate-400 mb-2">Data sebelum tanggal ini tidak dapat diedit atau dihapus untuk menjaga integritas audit laporan yang sudah dilaporkan.</p>
                                             <input
-                                                type="range"
-                                                min={0} max={20} step={1}
-                                                value={targetForm.workerEggAllowancePerDay}
-                                                onChange={(e) => setTargetForm(prev => ({ ...prev, workerEggAllowancePerDay: Number(e.target.value) }))}
-                                                className="w-full accent-emerald-500"
+                                                type="date"
+                                                value={targetForm.lastClosingDate}
+                                                onChange={(e) => setTargetForm(prev => ({ ...prev, lastClosingDate: e.target.value }))}
+                                                className="w-full bg-slate-800 border border-slate-700 rounded-sm px-3 py-2 text-sm font-bold text-white focus:border-amber-500 outline-none"
                                             />
-                                            <div className="flex justify-between text-[8px] text-slate-400 font-bold">
-                                                <span>0 butir</span><span>10 butir</span><span>20 butir</span>
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1215,10 +1187,41 @@ export default function Settings() {
                         key="data" className="space-y-8"
                     >
                         <div className="bg-white p-8 border border-slate-200 shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight italic mb-2">Backup & Arsip Data</h3>
-                            <p className="text-xs text-slate-500 uppercase font-bold italic tracking-tighter opacity-70 mb-8">Ekspor data Anda untuk cadangan atau analisis eksternal.</p>
+                            <div className="flex items-center space-x-6 mb-8">
+                                <div className="p-4 bg-slate-900 text-amber-500">
+                                    <Database size={32} strokeWidth={1.5} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight italic">Backup & Arsip Data</h3>
+                                    <p className="text-xs text-slate-500 mt-1 uppercase font-bold italic tracking-tighter opacity-70">Kelola snapshot data dan pembersihan sistem secara menyeluruh.</p>
+                                </div>
+                            </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Main Archive Node */}
+                                <div className="p-6 bg-slate-50 border border-slate-100 space-y-4">
+                                    <div className="flex items-center space-x-3">
+                                        <div className="p-2 bg-white border border-slate-200 rounded-sm text-indigo-600">
+                                            <Save size={20} />
+                                        </div>
+                                        <div>
+                                            <p className="text-[12px] font-black uppercase text-slate-900 tracking-tighter italic">Download SQL Backup</p>
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Dump seluruh database MySQL (.sql).</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => {
+                                                window.location.href = '/api/sync/all/export-sql';
+                                                Swal.fire({ title: 'Menyiapkan SQL...', icon: 'info', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+                                            }}
+                                            className="flex-1 bg-indigo-600 text-white py-3 rounded-sm font-bold text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-md"
+                                        >
+                                            Download SQL File
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div className="p-6 bg-slate-50 border border-slate-100 space-y-4">
                                     <div className="flex items-center space-x-3">
                                         <div className="p-2 bg-white border border-slate-200 rounded-sm text-slate-400">
@@ -1230,58 +1233,76 @@ export default function Settings() {
                                         </div>
                                     </div>
                                     <button 
-                                        onClick={() => {
-                                            const data = {
-                                                productionLogs: JSON.parse(localStorage.getItem('poultry_prod_logs') || '[]'),
-                                                salesLogs: JSON.parse(localStorage.getItem('poultry_sales_logs') || '[]'),
-                                                transactions: JSON.parse(localStorage.getItem('poultry_transactions') || '[]'),
-                                                inventory: JSON.parse(localStorage.getItem('poultry_inventory_v2') || '[]'),
-                                                accounts: JSON.parse(localStorage.getItem('poultry_accounts') || '[]'),
-                                                journals: JSON.parse(localStorage.getItem('poultry_journals') || '[]'),
-                                                journalLines: JSON.parse(localStorage.getItem('poultry_journal_lines') || '[]')
-                                            };
-                                            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                                            const url = URL.createObjectURL(blob);
-                                            const a = document.createElement('a');
-                                            a.href = url;
-                                            a.download = `backup_farm_${new Date().toISOString().slice(0,10)}.json`;
-                                            a.click();
+                                        onClick={async () => {
+                                            Swal.fire({ title: 'Menyiapkan JSON...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+                                            try {
+                                                const res = await fetch('/api/sync/all/export-json');
+                                                if (!res.ok) throw new Error('Export failed');
+                                                const data = await res.json();
+
+                                                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `full_backup_poultry_mind_${new Date().toISOString().slice(0,10)}.json`;
+                                                a.click();
+                                                Swal.fire({ title: 'Export Berhasil', icon: 'success', toast: true, position: 'top-end', showConfirmButton: false, timer: 3000 });
+                                            } catch (err) {
+                                                Swal.fire('Gagal', 'Gagal mengambil data dari server.', 'error');
+                                            }
                                         }}
                                         className="w-full bg-slate-900 text-white py-3 rounded-sm font-bold text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all"
                                     >
-                                        Download Backup
+                                        Download JSON Backup
                                     </button>
                                 </div>
 
-                                <div className="p-6 bg-rose-50 border border-rose-100 space-y-4">
+                                <div className="p-6 bg-rose-50 border border-rose-100 space-y-4 md:col-span-2">
                                     <div className="flex items-center space-x-3">
                                         <div className="p-2 bg-white border border-rose-200 rounded-sm text-rose-400">
                                             <RotateCcw size={20} />
                                         </div>
                                         <div>
                                             <p className="text-[12px] font-black uppercase text-rose-900 tracking-tighter italic">Reset Semua Data</p>
-                                            <p className="text-[9px] text-rose-400 font-bold uppercase tracking-widest mt-0.5">Hapus seluruh data permanen.</p>
+                                            <p className="text-[9px] text-rose-400 font-bold uppercase tracking-widest mt-0.5">Hapus seluruh data permanen di Database & Browser.</p>
                                         </div>
                                     </div>
                                     <button 
                                         onClick={() => {
                                             Swal.fire({
-                                                title: 'Hapus Semua Data?',
-                                                text: 'Seluruh histori transaksi, produksi, dan inventaris akan dihapus permanen!',
+                                                title: 'Reset Total?',
+                                                text: 'PERINGATAN: Seluruh data di database MySQL dan browser akan dihapus permanen!',
                                                 icon: 'warning',
                                                 showCancelButton: true,
                                                 confirmButtonColor: '#e11d48',
-                                                confirmButtonText: 'Ya, Hapus Semua'
-                                            }).then(res => {
+                                                confirmButtonText: 'Ya, Reset Sekarang',
+                                                cancelButtonText: 'Batal'
+                                            }).then(async (res) => {
                                                 if (res.isConfirmed) {
-                                                    localStorage.clear();
-                                                    window.location.reload();
+                                                    Swal.fire({
+                                                        title: 'Menghapus Data...',
+                                                        allowOutsideClick: false,
+                                                        didOpen: () => Swal.showLoading()
+                                                    });
+                                                    
+                                                    try {
+                                                        await resetAllData();
+                                                        Swal.fire({
+                                                            title: 'Sistem Direset',
+                                                            text: 'Aplikasi akan dimuat ulang.',
+                                                            icon: 'success',
+                                                            timer: 2000,
+                                                            showConfirmButton: false
+                                                        }).then(() => window.location.reload());
+                                                    } catch (err) {
+                                                        Swal.fire('Gagal', 'Terjadi kesalahan saat mereset data.', 'error');
+                                                    }
                                                 }
                                             });
                                         }}
-                                        className="w-full bg-rose-600 text-white py-3 rounded-sm font-bold text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all"
+                                        className="w-full bg-rose-600 text-white py-3 rounded-sm font-bold text-[10px] uppercase tracking-widest hover:bg-rose-700 transition-all shadow-lg"
                                     >
-                                        Hapus Permanen
+                                        RESET SEMUA DATA & DATABASE
                                     </button>
                                 </div>
                             </div>

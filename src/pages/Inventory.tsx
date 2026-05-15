@@ -36,6 +36,8 @@ const ITEM_TYPE_LABELS: Record<string, string> = {
   [ItemType.OTHER]: 'Lainnya',
 };
 
+import { generateUUID } from '../lib/uuid';
+
 export default function Inventory() {
   const { activeHouse, houses } = useHouse();
   const { inventory, updateInventory, updateInventoryItem, addInventoryItem, createStockMutation, addJournalEntry, addTransaction, addAPARRecord, transactions, productionLogs, farmSettings, accounts, getHouseCashBalance, createInterHouseDebt } = useGlobalData();
@@ -51,6 +53,7 @@ export default function Inventory() {
   // Transfer State
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [transferData, setTransferData] = useState({ itemId: '', targetHouseId: activeHouse?.id || '', quantity: 0 });
+  const [isSaving, setIsSaving] = useState(false);
 
   const suppliers = farmSettings.suppliers || [];
   const feedSuppliers = suppliers.filter(s => s.category === 'FEED' || s.category === 'MEDICINE');
@@ -100,139 +103,155 @@ export default function Inventory() {
       confirmButtonColor: '#0f172a',
       confirmButtonText: 'Ya, Tambah',
       cancelButtonText: 'Batal'
-    }).then((result) => {
+    }).then(async (result) => {
       if (result.isConfirmed) {
-        // ENFORCE: All purchases go to CENTRAL WAREHOUSE
-        const targetHouseId = 'CENTRAL';
-        const targetItem = inventory.find(i => i.name.toLowerCase() === newItem.name.toLowerCase() && i.type !== ItemType.EGG_STOCK && (!i.houseId || i.houseId === 'CENTRAL'));
-        let finalItemId = '';
-        if (targetItem) {
-          finalItemId = targetItem.id;
-          updateInventory(targetItem.id, newItem.quantity);
-          const price = newItem.price > 0 ? ((targetItem.lastPrice * targetItem.quantity) + (newItem.price * newItem.quantity)) / (targetItem.quantity + newItem.quantity) : targetItem.lastPrice;
-          updateInventoryItem(targetItem.id, { lastPrice: price });
-        } else {
-          finalItemId = `inv-${Date.now()}`;
-          addInventoryItem({
-            ...newItem,
-            id: finalItemId,
-            houseId: targetHouseId,
-            reorderPoint: 100,
-            lastPrice: newItem.price,
-          });
-        }
+        setIsSaving(true);
+        try {
+          const totalCost = newItem.quantity * newItem.price;
 
-        const totalCost = newItem.quantity * newItem.price;
+          // Determine paying house from selected account format: "accId|houseId"
+          const [accId, paidByHouseId] = selectedAccountId.split('|');
+          const finalAcc = accounts.find(a => a.id === accId) || accounts.find(a => a.isCashOrBank) || accounts[0];
+          const payingHouseId = paidByHouseId || activeHouse?.id || '';
 
-        // Determine paying house from selected account format: "accId|houseId"
-        const [accId, paidByHouseId] = selectedAccountId.split('|');
-        const finalAcc = accounts.find(a => a.id === accId) || accounts.find(a => a.isCashOrBank) || accounts[0];
-        const payingHouseId = paidByHouseId || activeHouse?.id || '';
-
-        // Check if house has sufficient balance, if not offer inter-house debt
-        const houseBalance = getHouseCashBalance(payingHouseId);
-        if (houseBalance < totalCost) {
-          const deficit = totalCost - Math.max(houseBalance, 0);
-          // Find another house that can cover
-          const otherHouse = houses.find(h => h.id !== payingHouseId && getHouseCashBalance(h.id) >= deficit);
-          if (otherHouse) {
-            createInterHouseDebt(
-              payingHouseId,
-              otherHouse.id,
-              deficit,
-              `Talangan Pembelian Stok: ${newItem.name}`
-            );
+          // ENFORCE: All purchases go to CENTRAL WAREHOUSE
+          const targetHouseId = 'CENTRAL';
+          const targetItem = inventory.find(i => i.name.toLowerCase() === newItem.name.toLowerCase() && i.type !== ItemType.EGG_STOCK && (!i.houseId || i.houseId === 'CENTRAL'));
+          let finalItemId = '';
+          if (targetItem) {
+            finalItemId = targetItem.id;
+            updateInventory(targetItem.id, newItem.quantity);
+            const price = newItem.price > 0 ? ((targetItem.lastPrice * targetItem.quantity) + (newItem.price * newItem.quantity)) / (targetItem.quantity + newItem.quantity) : targetItem.lastPrice;
+            await updateInventoryItem(targetItem.id, { lastPrice: price, paidByHouseId: payingHouseId });
+          } else {
+            finalItemId = generateUUID();
+            await addInventoryItem({
+              ...newItem,
+              id: finalItemId,
+              houseId: targetHouseId,
+              reorderPoint: 100,
+              lastPrice: newItem.price,
+              paidByHouseId: payingHouseId,
+            });
           }
+
+          // Check if house has sufficient balance, if not offer inter-house debt
+          const houseBalance = getHouseCashBalance(payingHouseId);
+          if (houseBalance < totalCost) {
+            const deficit = totalCost - Math.max(houseBalance, 0);
+            // Find another house that can cover
+            const otherHouse = houses.find(h => h.id !== payingHouseId && getHouseCashBalance(h.id) >= deficit);
+            if (otherHouse) {
+              await createInterHouseDebt(
+                payingHouseId,
+                otherHouse.id,
+                deficit,
+                `Talangan Pembelian Stok: ${newItem.name}`
+              );
+            }
+          }
+
+
+          const journalId = await addJournalEntry(
+            { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang: ${newItem.name}`, reference: `BELI-${Date.now()}` },
+            [
+              { accountId: 'acc-persediaan-pakan', debit: totalCost, credit: 0, houseId: payingHouseId },
+              { accountId: finalAcc.id, debit: 0, credit: totalCost, houseId: payingHouseId }
+            ]
+          );
+
+          await addTransaction({
+            houseId: payingHouseId,
+            date: new Date().toISOString().split('T')[0],
+            description: `Pembelian Stok Gudang Pusat: ${newItem.name}`,
+            qty: `${newItem.quantity} ${newItem.unit}`,
+            price: newItem.price,
+            total: totalCost,
+            account: finalAcc.name,
+            type: 'ASSET', // IMPORTANT: Not an EXPENSE, so it doesn't skew P&L
+            category: 'Persediaan',
+            journalId
+          });
+
+          await createStockMutation({
+            date: new Date().toISOString().split('T')[0],
+            itemId: finalItemId,
+            type: StockMutationType.PURCHASE,
+            quantity: newItem.quantity,
+            unitCost: newItem.price,
+            sourceLocation: 'SUPPLIER',
+            targetLocation: 'CENTRAL',
+            paidByHouseId: payingHouseId,
+            reference: `BELI-${Date.now()}`,
+            notes: `Dibayar oleh Kandang — ${finalAcc.name}`
+          });
+
+          Swal.fire({
+            title: 'Stok Ditambahkan!',
+            icon: 'success',
+            confirmButtonColor: '#0f172a',
+          });
+          setIsModalOpen(false);
+          setNewItem({ id: '', name: '', quantity: 0, unit: 'kg', price: 0, type: ItemType.RAW_MATERIAL });
+          setSelectedAccountId('');
+        } catch (err: any) {
+          Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+        } finally {
+          setIsSaving(false);
         }
-
-
-        const journalId = addJournalEntry(
-          { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang: ${newItem.name}`, reference: `BELI-${Date.now()}` },
-          [
-            { accountId: 'acc-persediaan-pakan', debit: totalCost, credit: 0, houseId: payingHouseId },
-            { accountId: finalAcc.id, debit: 0, credit: totalCost, houseId: payingHouseId }
-          ]
-        );
-
-        addTransaction({
-          houseId: payingHouseId,
-          date: new Date().toISOString().split('T')[0],
-          description: `Pembelian Stok Gudang Pusat: ${newItem.name}`,
-          qty: `${newItem.quantity} ${newItem.unit}`,
-          price: newItem.price,
-          total: totalCost,
-          account: finalAcc.name,
-          type: 'ASSET', // IMPORTANT: Not an EXPENSE, so it doesn't skew P&L
-          category: 'Persediaan',
-          journalId
-        });
-
-        createStockMutation({
-          date: new Date().toISOString().split('T')[0],
-          itemId: finalItemId,
-          type: StockMutationType.PURCHASE,
-          quantity: newItem.quantity,
-          unitCost: newItem.price,
-          sourceLocation: 'SUPPLIER',
-          targetLocation: 'CENTRAL',
-          paidByHouseId: payingHouseId,
-          reference: `BELI-${Date.now()}`,
-          notes: `Dibayar oleh Kandang — ${finalAcc.name}`
-        });
-
-        Swal.fire({
-          title: 'Stok Ditambahkan!',
-          icon: 'success',
-          confirmButtonColor: '#0f172a',
-        });
-        setIsModalOpen(false);
-        setNewItem({ id: '', name: '', quantity: 0, unit: 'kg', price: 0, type: ItemType.RAW_MATERIAL });
-        setSelectedAccountId('');
       }
     });
   };
 
-  const handleTransferStock = (e: React.FormEvent) => {
+  const handleTransferStock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!transferData.itemId || !transferData.targetHouseId || transferData.quantity <= 0) return;
 
-    const sourceItem = inventory.find(i => i.id === transferData.itemId);
-    if (!sourceItem || sourceItem.quantity < transferData.quantity) {
-      Swal.fire('Stok Tidak Cukup', 'Gudang pusat tidak memiliki stok yang cukup.', 'error');
-      return;
-    }
+    setIsSaving(true);
+    try {
+      const sourceItem = inventory.find(i => i.id === transferData.itemId);
+      if (!sourceItem || sourceItem.quantity < transferData.quantity) {
+        Swal.fire('Stok Tidak Cukup', 'Gudang pusat tidak memiliki stok yang cukup.', 'error');
+        return;
+      }
 
-    // Deduct from Central
-    updateInventory(sourceItem.id, -transferData.quantity);
+      // Deduct from Central
+      updateInventory(sourceItem.id, -transferData.quantity);
 
-    // Add to House
-    const houseItem = inventory.find(i => i.name === sourceItem.name && i.houseId === transferData.targetHouseId);
-    if (houseItem) {
-      updateInventory(houseItem.id, transferData.quantity);
-    } else {
-      addInventoryItem({
-        ...sourceItem,
-        id: undefined as any,
-        houseId: transferData.targetHouseId,
-        quantity: transferData.quantity
+      // Add to House
+      const houseItem = inventory.find(i => i.name === sourceItem.name && i.houseId === transferData.targetHouseId);
+      if (houseItem) {
+        updateInventory(houseItem.id, transferData.quantity);
+      } else {
+        await addInventoryItem({
+          ...sourceItem,
+          id: undefined as any,
+          houseId: transferData.targetHouseId,
+          quantity: transferData.quantity,
+          paidByHouseId: sourceItem.paidByHouseId // Carry over the original payer
+        });
+      }
+
+      // Create stock mutation log
+      await createStockMutation({
+        date: new Date().toISOString().split('T')[0],
+        itemId: sourceItem.id,
+        type: StockMutationType.TRANSFER,
+        quantity: transferData.quantity,
+        unitCost: sourceItem.lastPrice,
+        sourceLocation: 'CENTRAL',
+        targetLocation: transferData.targetHouseId,
+        reference: `TRF-${Date.now()}`,
+        notes: `Distribusi ke Kandang`
       });
+
+      setIsTransferModalOpen(false);
+      Swal.fire('Berhasil', 'Stok berhasil dimutasi ke kandang.', 'success');
+    } catch (error: any) {
+      Swal.fire('Gagal', error.message || 'Gagal memutasi stok.', 'error');
+    } finally {
+      setIsSaving(false);
     }
-
-    // Create stock mutation log
-    createStockMutation({
-      date: new Date().toISOString().split('T')[0],
-      itemId: sourceItem.id,
-      type: StockMutationType.TRANSFER,
-      quantity: transferData.quantity,
-      unitCost: sourceItem.lastPrice,
-      sourceLocation: 'CENTRAL',
-      targetLocation: transferData.targetHouseId,
-      reference: `TRF-${Date.now()}`,
-      notes: `Distribusi ke Kandang`
-    });
-
-    setIsTransferModalOpen(false);
-    Swal.fire('Berhasil', 'Stok berhasil dimutasi ke kandang.', 'success');
   };
 
   return (
@@ -366,10 +385,11 @@ export default function Inventory() {
           <div className="pt-4">
             <button
               type="submit"
-              className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] flex items-center justify-center space-x-2 hover:bg-slate-800 transition-all shadow-xl group"
+              disabled={isSaving}
+              className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] flex items-center justify-center space-x-2 hover:bg-slate-800 transition-all shadow-xl group disabled:opacity-50"
             >
-              <Save size={16} className="group-hover:text-amber-500 transition-colors" />
-              <span>Simpan ke Database (Gudang)</span>
+              <Save size={16} className={cn("group-hover:text-amber-500 transition-colors", isSaving && "animate-pulse")} />
+              <span>{isSaving ? 'Menyimpan...' : 'Simpan ke Database (Gudang)'}</span>
             </button>
           </div>
         </form>
@@ -421,8 +441,8 @@ export default function Inventory() {
               step="0.1"
             />
           </div>
-          <button type="submit" className="w-full bg-amber-500 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] flex items-center justify-center space-x-2 hover:bg-amber-600">
-            <ArrowRightLeft size={16} /><span>Proses Mutasi</span>
+          <button type="submit" disabled={isSaving} className="w-full bg-amber-500 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] flex items-center justify-center space-x-2 hover:bg-amber-600 disabled:opacity-50">
+            <ArrowRightLeft size={16} /><span>{isSaving ? 'Memproses...' : 'Proses Mutasi'}</span>
           </button>
         </form>
       </Modal>

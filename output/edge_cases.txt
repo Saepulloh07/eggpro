@@ -1,0 +1,27 @@
+DAFTAR SIMULASI EDGE CASES
+==========================
+
+SIMULASI 1: JARINGAN TERPUTUS SAAT SIMPAN PRODUKSI
+- Skenario: User klik "Simpan Produksi", koneksi WiFi kandang terputus.
+- Reaksi Sistem Saat Ini: Berhasil. State React di-update, IndexedDB (via `syncRecord`) menyimpan data secara lokal. Saat online kembali, belum ada mekanisme background-sync eksplisit (kecuali user me-refresh aplikasi atau module trigger).
+- Penilaian: WARNING. Aplikasi tidak mati, tapi backend tidak menerima data tersebut sampai sinkronisasi ulang berhasil.
+
+SIMULASI 2: PENGGUNAAN PAKAN MELEBIHI STOK
+- Skenario: Stok jagung tersisa 50kg. User memasukkan konsumsi pakan 60kg.
+- Reaksi Sistem Saat Ini: Di fungsi `updateInventory`, jika `newQty < 0`, operasi dibatalkan dan memunculkan error console / alert.
+- Penilaian: PASS di sisi UI, namun rentan di-bypass via API call atau race condition (karena check dan update tidak dilakukan secara atomik di database).
+
+SIMULASI 3: PENJUALAN TELUR PECAH/AFKIR
+- Skenario: Pekerja melaporkan 10 butir telur pecah. Telur ini dijual seharga Rp0.
+- Reaksi Sistem Saat Ini: Telur pecah tidak menambah stok (`if (category !== EggCategory.PECAH)`). Telur pecah masuk ke perhitungan HDP dan Abnormalitas.
+- Penilaian: PASS. Telur pecah tidak akan mengacaukan valuasi persediaan di neraca.
+
+SIMULASI 4: PEMBELIAN KREDIT LALU PELUNASAN GANDA
+- Skenario: Admin A dan Admin B membuka halaman Hutang bersamaan. Keduanya klik "Bayar" untuk tagihan Rp 1.000.000 secara bersamaan.
+- Reaksi Sistem Saat Ini: Karena validasi dilakukan di frontend (`Math.max(0, r.remainingAmount - paymentAmount)`), salah satu update akan menang (terakhir dikirim ke DB) tanpa mempedulikan update dari admin lain. Bisa jadi uang di kas terpotong 2x (jika frontend tidak cek ulang), atau hutang menjadi Rp0 meski dibayar 2 juta.
+- Penilaian: FAIL. Butuh implementasi Optimistic Concurrency Control (Version/ETag) atau Pessimistic Locking di level database.
+
+SIMULASI 5: PENGHAPUSAN TRANSAKSI MASA LALU YANG SUDAH CLOSING
+- Skenario: Admin mencoba menghapus transaksi bulan lalu.
+- Reaksi Sistem Saat Ini: Ada fungsi `checkLockAndSwal` yang mengecek apakah tanggal tersebut `<= lastClosingDate`. Jika ya, operasi ditolak (Terkunci).
+- Penilaian: PASS. Kontrol periode akuntansi berfungsi baik menahan mutasi historis.

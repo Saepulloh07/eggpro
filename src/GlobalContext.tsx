@@ -21,8 +21,11 @@ import {
   type OperationalExpense,
   type SinkingFundAllocation,
   SinkingFundType,
-  PaymentStatus
+  PaymentStatus,
+  DEFAULT_ACCOUNTS
 } from './types';
+import { generateUUID } from './lib/uuid';
+import Swal from 'sweetalert2';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -72,7 +75,7 @@ export interface FinancialTransaction {
 // Re-export InventoryItem so consumers can import from GlobalContext
 export type { InventoryItem };
 
-import { syncToDb, loadFromDbOrIndexedDB } from './syncUtils';
+import { syncToDb, syncRecord, deleteRecord, loadFromDbOrIndexedDB } from './syncUtils';
 
 // ─── Context Type ─────────────────────────────────────────────────────────────
 
@@ -98,33 +101,34 @@ interface GlobalContextType {
   addBiosecurityRecordsBulk: (records: Omit<BiosecurityRecord, 'id'>[]) => void;
   updateBiosecurityRecord: (id: string, updates: Partial<BiosecurityRecord>) => void;
   deleteBiosecurityRecord: (id: string) => void;
-  saveProduction: (log: Omit<ProductionLog, 'id'>) => void;
-  saveSale: (sale: Omit<SalesLog, 'id'>, targetAccountId?: string) => void;
-  addTransaction: (tx: Omit<FinancialTransaction, 'id'>) => string;
-  deleteTransaction: (id: string) => void;
-  updateTransaction: (id: string, updates: Partial<FinancialTransaction>) => void;
-  updateInventory: (id: string, delta: number) => void;
-  addInventoryItem: (item: Omit<InventoryItem, 'id'>) => void;
-  updateInventoryItem: (id: string, updates: Partial<InventoryItem>) => void;
-  createStockMutation: (mutation: Omit<StockMutation, 'id' | 'totalCost'>) => void;
-  addJournalEntry: (entry: Omit<JournalEntry, 'id'>, lines: Omit<JournalLine, 'id' | 'journalId'>[]) => string;
-  addAPARRecord: (record: Omit<APARRecord, 'id' | 'createdAt'>) => void;
-  updateAPARRecord: (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => void;
-  createOperationalExpense: (tx: Omit<FinancialTransaction, 'id' | 'type'>, accountId: string, paymentAccountId: string) => void;
-  addOperationalExpenseRecord: (expense: Omit<OperationalExpense, 'id'>) => void;
-  realizeSinkingFund: (amount: number, type: SinkingFundType, notes?: string) => void;
-  addRecipe: (recipe: any) => void;
-  updateRecipe: (id: string, updates: any) => void;
-  deleteRecipe: (id: string) => void;
+  saveProduction: (log: Omit<ProductionLog, 'id'>) => Promise<void>;
+  saveSale: (sale: Omit<SalesLog, 'id'>, targetAccountId?: string) => Promise<void>;
+  addTransaction: (tx: Omit<FinancialTransaction, 'id'>) => Promise<string>;
+  deleteTransaction: (id: string) => Promise<void>;
+  updateTransaction: (id: string, updates: Partial<FinancialTransaction>) => Promise<void>;
+  updateInventory: (id: string, delta: number) => boolean;
+  addInventoryItem: (item: Omit<InventoryItem, 'id'>) => Promise<string>;
+  updateInventoryItem: (id: string, updates: Partial<InventoryItem>) => Promise<void>;
+  createStockMutation: (mutation: Omit<StockMutation, 'id' | 'totalCost'>) => Promise<void>;
+  addJournalEntry: (entry: Omit<JournalEntry, 'id'>, lines: Omit<JournalLine, 'id' | 'journalId'>[]) => Promise<string>;
+  addAPARRecord: (record: Omit<APARRecord, 'id' | 'createdAt'>) => Promise<void>;
+  updateAPARRecord: (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => Promise<void>;
+  createOperationalExpense: (tx: Omit<FinancialTransaction, 'id' | 'type'>, accountId: string, paymentAccountId: string) => Promise<void>;
+  addOperationalExpenseRecord: (expense: Omit<OperationalExpense, 'id'>) => Promise<void>;
+  realizeSinkingFund: (amount: number, type: SinkingFundType, notes?: string) => Promise<void>;
+  addRecipe: (recipe: any) => Promise<void>;
+  updateRecipe: (id: string, updates: any) => Promise<void>;
+  deleteRecipe: (id: string) => Promise<void>;
   getHDP: (houseId: string, date: string, currentCount: number) => number;
+  getHHP: (houseId: string, initialCount: number) => number;
   getCumulativeFCR: (houseId: string) => number;
   getFeedIntakePerBird: (houseId: string, currentCount: number) => number;
   getFlockAnalytics: (houseId: string, currentCount: number) => FlockAnalytics;
   getAccountBalance: (accountId: string) => { debit: number; credit: number; balance: number };
   getTrialBalance: () => { accountId: string; name: string; code: string; category: AccountCategory; debit: number; credit: number }[];
   farmSettings: FarmSettings;
-  saveFarmSettings: (settings: Partial<FarmSettings>) => void;
-  addModalAwal: (amount: number, description?: string, houseId?: string, targetAccountId?: string) => void;
+  saveFarmSettings: (settings: Partial<FarmSettings>) => Promise<void>;
+  addModalAwal: (amount: number, description?: string, houseId?: string, targetAccountId?: string) => Promise<void>;
   assets: Asset[];
   addAsset: (asset: Omit<Asset, 'id' | 'maintenanceHistory'>) => void;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
@@ -134,6 +138,8 @@ interface GlobalContextType {
   deleteAccount: (id: string) => void;
   getHouseCashBalance: (houseId: string) => number;
   createInterHouseDebt: (fromHouseId: string, toHouseId: string, amount: number, description: string) => void;
+  closeMonth: (yearMonth: string, inputBy: string) => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
 const GlobalContext = createContext<GlobalContextType | undefined>(undefined);
@@ -159,92 +165,143 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [biosecurityRecords, setBiosecurityRecords] = useState<BiosecurityRecord[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  useEffect(() => { if (isInitialized) syncToDb('poultry_prod_logs', productionLogs); }, [productionLogs, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_sales_logs', salesLogs); }, [salesLogs, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_transactions', transactions); }, [transactions, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_inventory_v2', inventory); }, [inventory, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_mortality', mortalityRecords); }, [mortalityRecords, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_recipes', recipes); }, [recipes, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_farm_settings', farmSettings); }, [farmSettings, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_assets', assets); }, [assets, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_accounts', accounts); }, [accounts, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_journals', journalEntries); }, [journalEntries, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_journal_lines', journalLines); }, [journalLines, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_stock_mutations', stockMutations); }, [stockMutations, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_apar', apArRecords); }, [apArRecords, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_op_expenses', operationalExpenses); }, [operationalExpenses, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_sinking_fund', sinkingFundAllocations); }, [sinkingFundAllocations, isInitialized]);
-  useEffect(() => { if (isInitialized) syncToDb('poultry_biosecurity', biosecurityRecords); }, [biosecurityRecords, isInitialized]);
+  // Removed dangerous useEffect full-syncs to prevent race conditions.
+  // We now use incremental sync (syncRecord) within each action.
 
+
+  const refreshData = async () => {
+    await Promise.all([
+      loadFromDbOrIndexedDB('poultry_prod_logs', setProductionLogs),
+      loadFromDbOrIndexedDB('poultry_sales_logs', setSalesLogs),
+      loadFromDbOrIndexedDB('poultry_transactions', setTransactions),
+      loadFromDbOrIndexedDB('poultry_inventory_v2', setInventory),
+      loadFromDbOrIndexedDB('poultry_mortality', setMortalityRecords),
+      loadFromDbOrIndexedDB('poultry_recipes', setRecipes),
+      loadFromDbOrIndexedDB('poultry_farm_settings', (data) => setFarmSettings({ ...DEFAULT_FARM_SETTINGS, ...data })),
+      loadFromDbOrIndexedDB('poultry_assets', setAssets),
+      loadFromDbOrIndexedDB('poultry_accounts', (data) => {
+        if (!data || data.length === 0) {
+          setAccounts(DEFAULT_ACCOUNTS);
+        } else {
+          setAccounts(data);
+        }
+      }),
+      loadFromDbOrIndexedDB('poultry_journals', setJournalEntries),
+      loadFromDbOrIndexedDB('poultry_journal_lines', setJournalLines),
+      loadFromDbOrIndexedDB('poultry_stock_mutations', setStockMutations),
+      loadFromDbOrIndexedDB('poultry_apar', setApArRecords),
+      loadFromDbOrIndexedDB('poultry_op_expenses', setOperationalExpenses),
+      loadFromDbOrIndexedDB('poultry_sinking_fund', setSinkingFundAllocations),
+      loadFromDbOrIndexedDB('poultry_biosecurity', setBiosecurityRecords),
+    ]);
+  };
 
   // Load from DB or IndexedDB on mount
   useEffect(() => {
     const init = async () => {
-        await Promise.all([
-            loadFromDbOrIndexedDB('poultry_prod_logs', setProductionLogs),
-            loadFromDbOrIndexedDB('poultry_sales_logs', setSalesLogs),
-            loadFromDbOrIndexedDB('poultry_transactions', setTransactions),
-            loadFromDbOrIndexedDB('poultry_inventory_v2', setInventory),
-            loadFromDbOrIndexedDB('poultry_mortality', setMortalityRecords),
-            loadFromDbOrIndexedDB('poultry_recipes', setRecipes),
-            loadFromDbOrIndexedDB('poultry_farm_settings', (data) => setFarmSettings({...DEFAULT_FARM_SETTINGS, ...data})),
-            loadFromDbOrIndexedDB('poultry_assets', setAssets),
-            loadFromDbOrIndexedDB('poultry_accounts', setAccounts),
-            loadFromDbOrIndexedDB('poultry_journals', setJournalEntries),
-            loadFromDbOrIndexedDB('poultry_journal_lines', setJournalLines),
-            loadFromDbOrIndexedDB('poultry_stock_mutations', setStockMutations),
-            loadFromDbOrIndexedDB('poultry_apar', setApArRecords),
-            loadFromDbOrIndexedDB('poultry_op_expenses', setOperationalExpenses),
-            loadFromDbOrIndexedDB('poultry_sinking_fund', setSinkingFundAllocations),
-            loadFromDbOrIndexedDB('poultry_biosecurity', setBiosecurityRecords),
-        ]);
-        setIsInitialized(true);
+      await refreshData();
+      setIsInitialized(true);
     };
     init();
   }, []);
 
 
 
+  // ─── Security Helpers ──────────────────────────────────────────────────────
+  const isLocked = (date: string) => {
+    if (!farmSettings.lastClosingDate) return false;
+    return new Date(date) <= new Date(farmSettings.lastClosingDate);
+  };
+
+  const checkLockAndSwal = (date: string) => {
+    if (isLocked(date)) {
+      Swal.fire({
+        title: 'Data Terkunci!',
+        text: `Periode ini sudah ditutup (Closing Date: ${farmSettings.lastClosingDate}). Data tidak dapat diubah.`,
+        icon: 'error',
+        confirmButtonColor: '#0f172a'
+      });
+      return true;
+    }
+    return false;
+  };
+
   // ─── Actions ───────────────────────────────────────────────────────────────
 
   const updateInventory = (id: string, delta: number) => {
-    setInventory(prev => prev.map(item =>
-      item.id === id ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item
-    ));
+    let success = true;
+    setInventory(prev => prev.map(item => {
+      if (item.id === id) {
+        const newQty = item.quantity + delta;
+        if (newQty < 0) {
+          console.error(`[Inventory] Insufficient stock for ${item.name}. Required: ${Math.abs(delta)}, Available: ${item.quantity}`);
+          success = false;
+          return item; // Block negative stock
+        }
+        return { ...item, quantity: newQty };
+      }
+      return item;
+    }));
+    return success;
   };
 
+  // NEW: Professional Inventory Purchase with Moving Average logic
   const addInventoryItem = (itemData: Omit<InventoryItem, 'id'>) => {
-    setInventory(prev => [...prev, { ...itemData, id: `inv-${Date.now()}` }]);
+    const existing = inventory.find(i =>
+      i.name.toLowerCase() === itemData.name.toLowerCase() &&
+      (i.houseId === itemData.houseId || (!i.houseId && !itemData.houseId))
+    );
+    if (existing) return existing.id;
+
+    const id = generateUUID();
+    const newItem = { ...itemData, id };
+    setInventory(prev => [...prev, newItem]);
+    syncRecord('poultry_inventory_v2', newItem);
+    return id;
   };
 
   const updateInventoryItem = (id: string, updates: Partial<InventoryItem>) => {
-    setInventory(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
+    setInventory(prev => prev.map(item => {
+      if (item.id === id) {
+        const updated = { ...item, ...updates };
+        syncRecord('poultry_inventory_v2', updated);
+        return updated;
+      }
+      return item;
+    }));
   };
-  
+
   const createStockMutation = (mutation: Omit<StockMutation, 'id' | 'totalCost'>) => {
-    const id = `mut-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    setStockMutations(prev => [...prev, { ...mutation, id, totalCost: mutation.quantity * mutation.unitCost }]);
+    const id = generateUUID();
+    const newMutation = { ...mutation, id, totalCost: mutation.quantity * (mutation.unitCost || 0) };
+    setStockMutations(prev => [...prev, newMutation]);
+    syncRecord('poultry_stock_mutations', newMutation);
   };
-  
+
   // ─── Accounting Actions ──────────────────────────────────────────────────────
   const addJournalEntry = (entry: Omit<JournalEntry, 'id'>, lines: Omit<JournalLine, 'id' | 'journalId'>[]) => {
-    const journalId = `jrn-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    setJournalEntries(prev => [...prev, { ...entry, id: journalId }]);
-    setJournalLines(prev => [
-      ...prev,
-      ...lines.map((line, idx) => ({ ...line, id: `jline-${Date.now()}-${idx}`, journalId }))
-    ]);
+    const journalId = generateUUID();
+    const newEntry = { ...entry, id: journalId };
+    setJournalEntries(prev => [...prev, newEntry]);
+    syncRecord('poultry_journals', newEntry);
+
+    const newLines = lines.map(line => ({ ...line, id: generateUUID(), journalId }));
+    setJournalLines(prev => [...prev, ...newLines]);
+    newLines.forEach(line => syncRecord('poultry_journal_lines', line));
+
     return journalId;
   };
 
-  const addAPARRecord = (record: Omit<APARRecord, 'id' | 'createdAt'>) => {
-    const id = `apar-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    setApArRecords(prev => [...prev, { ...record, id, createdAt: new Date().toISOString() }]);
+  const addAPARRecord = async (record: Omit<APARRecord, 'id' | 'createdAt'>) => {
+    const id = generateUUID();
+    const newRecord = { ...record, id, createdAt: new Date().toISOString() };
+    setApArRecords(prev => [...prev, newRecord]);
+    syncRecord('poultry_apar', newRecord);
   };
 
-  const updateAPARRecord = (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => {
+  const updateAPARRecord = async (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => {
     let affectedRecord: APARRecord | undefined;
-    
+
     setApArRecords(prev => prev.map(r => {
       if (r.id === id) {
         affectedRecord = r;
@@ -276,8 +333,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // If HUTANG: Debit Payable (acc-hutang-pakan / acc-hutang-doc), Credit Cash
       // If PIUTANG: Debit Cash, Credit Receivable (acc-piutang-telur)
       const isHutang = r.type === 'HUTANG';
-      const payableAccountId = r.description.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' : 
-                               r.description.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
+      const payableAccountId = r.description.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' :
+        r.description.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
       const receivableAccountId = 'acc-piutang-telur';
 
       const journalId = addJournalEntry({
@@ -285,21 +342,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Pelunasan ${r.type}: ${r.entityName} - ${notes || r.description}`,
         reference: `PAY-${r.id.slice(-4)}-${Date.now().toString().slice(-4)}`
       }, [
-        { 
-          accountId: isHutang ? payableAccountId : account.id, 
-          debit: paymentAmount, 
-          credit: 0, 
-          houseId: r.houseId 
+        {
+          accountId: isHutang ? payableAccountId : account.id,
+          debit: paymentAmount,
+          credit: 0,
+          houseId: r.houseId
         },
-        { 
-          accountId: isHutang ? account.id : receivableAccountId, 
-          debit: 0, 
-          credit: paymentAmount, 
-          houseId: r.houseId 
+        {
+          accountId: isHutang ? account.id : receivableAccountId,
+          debit: 0,
+          credit: paymentAmount,
+          houseId: r.houseId
         }
       ]);
 
-      addTransaction({
+      await addTransaction({
         houseId: r.houseId,
         date: today,
         description: `[PELUNASAN] ${r.entityName} - ${notes || r.description}`,
@@ -315,7 +372,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Record a standalone operational expense with full journal entry
-  const addOperationalExpenseRecord = (expense: Omit<OperationalExpense, 'id'>) => {
+  const addOperationalExpenseRecord = async (expense: Omit<OperationalExpense, 'id'>) => {
     const journalId = addJournalEntry(
       { date: expense.date, description: expense.description, reference: `OPS-${Date.now()}` },
       [
@@ -323,16 +380,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         { accountId: expense.paymentAccountId, debit: 0, credit: expense.amount, houseId: expense.houseId },
       ]
     );
-    const newExpense: OperationalExpense = { ...expense, id: `opex-${Date.now()}`, journalId };
+    const newExpense: OperationalExpense = { ...expense, id: generateUUID(), journalId };
     setOperationalExpenses(prev => [...prev, newExpense]);
-    addTransaction({
+    syncRecord('poultry_op_expenses', newExpense);
+
+    const expenseAcc = accounts.find(a => a.id === expense.accountId);
+    await addTransaction({
       houseId: expense.houseId,
       date: expense.date,
       description: expense.description,
       qty: '1',
       price: expense.amount,
       total: expense.amount,
-      account: accounts.find(a => a.id === expense.paymentAccountId)?.name || 'Kas',
+      account: expenseAcc?.name || 'Beban Operasional',
       type: 'EXPENSE',
       category: expense.category,
       journalId,
@@ -341,19 +401,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Realize sinking fund allocation — moves retained earnings to reserve fund
   // Updated: Treated as an appropriation of profit (expense-like)
-  const realizeSinkingFund = (amount: number, type: SinkingFundType, houseId?: string, notes?: string) => {
+  const realizeSinkingFund = async (amount: number, type: SinkingFundType, houseId?: string, notes?: string) => {
     const today = new Date().toISOString().split('T')[0];
     const journalId = addJournalEntry(
       { date: today, description: `Alokasi Dana Peremajaan: ${type}`, reference: `SF-${Date.now()}` },
       [
-        { accountId: 'acc-beban-penyisihan', debit: amount, credit: 0, houseId }, // Reduces P&L
-        { accountId: 'acc-kas', debit: 0, credit: amount, houseId }, // Moves cash out of main
-        { accountId: 'acc-bank-cadangan', debit: amount, credit: 0, houseId }, // Moves cash into reserve
-        { accountId: 'acc-cadangan-ekuitas', debit: 0, credit: amount, houseId }, // Offsets the reserve asset
+        { accountId: 'acc-beban-penyisihan', debit: amount, credit: 0, houseId },
+        { accountId: 'acc-kas', debit: 0, credit: amount, houseId },
+        { accountId: 'acc-bank-cadangan', debit: amount, credit: 0, houseId },
+        { accountId: 'acc-cadangan-ekuitas', debit: 0, credit: amount, houseId },
       ]
     );
 
-    addTransaction({
+    await addTransaction({
       houseId,
       date: today,
       description: `[ALOKASI DANA] ${type} - ${notes || 'Penyisihan Keuntungan'}`,
@@ -362,12 +422,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       total: amount,
       account: 'Kas -> Cadangan',
       type: 'EXPENSE',
-      category: 'Pelunasan', // Categorized as Pelunasan/Transfer to avoid double P&L hit (since expense is already in journal)
+      category: 'Pelunasan',
       journalId
     });
 
     const allocation: SinkingFundAllocation = {
-      id: `sf-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: generateUUID(),
       date: today,
       type,
       amount,
@@ -375,6 +435,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       journalId,
     };
     setSinkingFundAllocations(prev => [...prev, allocation]);
+    syncRecord('poultry_sinking_fund', allocation);
   };
 
   // Compute debit/credit balance for a single account from journal lines
@@ -397,7 +458,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }).filter(row => row.debit > 0 || row.credit > 0);
   };
 
-  const createOperationalExpense = (tx: Omit<FinancialTransaction, 'id' | 'type'>, accountId: string, paymentAccountId: string) => {
+  const createOperationalExpense = async (tx: Omit<FinancialTransaction, 'id' | 'type'>, accountId: string, paymentAccountId: string) => {
+    if (checkLockAndSwal(tx.date)) return;
     const journalId = addJournalEntry(
       { date: tx.date, description: tx.description, reference: `TRX-OPS-${Date.now()}` },
       [
@@ -405,195 +467,93 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         { accountId: paymentAccountId, debit: 0, credit: tx.total, houseId: tx.houseId }
       ]
     );
-    addTransaction({ ...tx, type: 'EXPENSE', journalId, paymentStatus: PaymentStatus.LUNAS });
+    const expenseAcc = accounts.find(a => a.id === accountId);
+    await addTransaction({ ...tx, account: expenseAcc?.name || tx.account, type: 'EXPENSE', journalId, paymentStatus: PaymentStatus.LUNAS });
   };
 
-  const addTransaction = (txData: Omit<FinancialTransaction, 'id'>): string => {
-    const id = `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const newTx = { ...txData, id };
-    setTransactions(prev => [...prev, newTx]);
-    
-    // Sync to backend asynchronously
-    fetch('/api/finance/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTx)
-    }).catch(err => console.error("Failed to sync transaction:", err));
-    
-    return id;
-  };
-
-  const deleteTransaction = (id: string) => {
-    setTransactions(prev => prev.filter(tx => tx.id !== id));
-  };
-
-
-  const updateTransaction = (id: string, updates: Partial<FinancialTransaction>) => {
-    setTransactions(prev => prev.map(tx => tx.id === id ? { ...tx, ...updates } : tx));
-  };
-
-  /** FIX #1 + #2 + #4: saveProduction now deducts feed, increments egg stock, and logs mortality */
-  const saveProduction = (logData: Omit<ProductionLog, 'id'>) => {
-    const newLog = { ...logData, id: `prod-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
-    setProductionLogs(prev => [...prev, newLog]);
-    
-    // Sync to backend
-    fetch('/api/production', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newLog)
-    }).catch(err => console.error("Failed to sync production:", err));
-
-    // FIX #1: Deduct the selected feed inventory item
-    if (logData.feedInventoryItemId && logData.feedConsumed > 0) {
-      updateInventory(logData.feedInventoryItemId, -logData.feedConsumed);
-      const item = inventory.find(i => i.id === logData.feedInventoryItemId);
-      if (item) {
-        const totalCost = logData.feedConsumed * item.lastPrice;
-        createStockMutation({
-          date: logData.date,
-          itemId: item.id,
-          type: StockMutationType.USAGE,
-          quantity: logData.feedConsumed,
-          unitCost: item.lastPrice,
-          sourceLocation: logData.houseId,
-          reference: `Prod Feed: ${newLog.id}`
-        });
-
-        // 1. Catat Hutang Kandang ke Pusat
-        addAPARRecord({
-          type: 'HUTANG',
-          entityName: `Pusat (Internal)`,
-          description: `Pemakaian Pakan Kandang ${logData.houseId}`,
-          amount: totalCost,
-          remainingAmount: totalCost,
-          dueDate: new Date().toISOString().split('T')[0],
-          status: 'OPEN',
-          relatedTransactionId: newLog.id,
-          houseId: logData.houseId,
-          paymentHistory: []
-        });
-
-        // 2. Catat Piutang Pusat dari Kandang
-        addAPARRecord({
-          type: 'PIUTANG',
-          entityName: `Kandang ${logData.houseId} (Internal)`,
-          description: `Pemakaian Pakan Kandang ${logData.houseId}`,
-          amount: totalCost,
-          remainingAmount: totalCost,
-          dueDate: new Date().toISOString().split('T')[0],
-          status: 'OPEN',
-          relatedTransactionId: newLog.id,
-          houseId: 'CENTRAL', // Piutang milik pusat
-          paymentHistory: []
-        });
-
-        // 3. Catat Biaya Operasional (Pakan) untuk Kandang (Debit Beban Pakan, Credit Persediaan)
-        const journalId = addJournalEntry(
-          { date: logData.date, description: `Pemakaian Pakan Produksi: Kandang ${logData.houseId}`, reference: `PROD-FEED-${newLog.id}` },
-          [
-            { accountId: 'acc-beban-pakan', debit: totalCost, credit: 0, houseId: logData.houseId },
-            { accountId: 'acc-persediaan', debit: 0, credit: totalCost, houseId: logData.houseId }
-          ]
-        );
-
-        addTransaction({
-          houseId: logData.houseId,
-          date: logData.date,
-          description: `Biaya Pemakaian Pakan Produksi`,
-          qty: `${logData.feedConsumed} ${item.unit}`,
-          price: item.lastPrice,
-          total: totalCost,
-          account: 'Persediaan',
-          type: 'EXPENSE',
-          category: 'Pakan',
-          journalId
-        });
-      }
-    }
-
-    // FIX #2: Auto-increment each egg category stock (Scoped per house)
-    Object.entries(logData.breakdown).forEach(([category, count]) => {
-      // Do not add 'PECAH' and 'RETAK' to sellable stock if not desired, 
-      // but according to previous logic they were added. We'll add them but keep track.
-      // Or we can add them to warehouse 'CENTRAL' by default. Let's keep existing logic but add mutation.
-      if (count > 0 && category !== EggCategory.PECAH) {
-        setInventory(prev => {
-          const existing = prev.find(item => item.type === ItemType.EGG_STOCK && item.eggCategory === category && item.houseId === logData.houseId);
-          if (existing) {
-            return prev.map(item => item.id === existing.id ? { ...item, quantity: item.quantity + count, houseId: logData.houseId } : item);
-          } else {
-            return [...prev, {
-              id: `inv-egg-${logData.houseId}-${category}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-              houseId: logData.houseId,
-              name: `Stok Telur ${category}`,
-              type: ItemType.EGG_STOCK,
-              quantity: count,
-              unit: 'butir',
-              reorderPoint: 0,
-              lastPrice: 0,
-              eggCategory: category as EggCategory
-            }];
-          }
-        });
-        
-        // Add production mutation
-        setTimeout(() => {
-            const currentInventory = JSON.parse(localStorage.getItem('poultry_inventory_v2') || '[]');
-            const existingItem = currentInventory.find((item: any) => item.type === ItemType.EGG_STOCK && item.eggCategory === category && item.houseId === logData.houseId);
-            if (existingItem) {
-                createStockMutation({
-                    date: logData.date,
-                    itemId: existingItem.id,
-                    type: StockMutationType.PRODUCTION,
-                    quantity: count,
-                    unitCost: 0, // Generated internally
-                    sourceLocation: logData.houseId,
-                    reference: `Prod: ${newLog.id}`
-                });
-            }
-        }, 100);
-      }
-    });
-
-    // FIX #4: Save mortality record if applicable
-    if (logData.mortality > 0) {
-      const mortalityRecord: MortalityRecord = {
-        id: `mort-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        houseId: logData.houseId,
-        date: logData.date,
-        count: logData.mortality,
-        cause: logData.mortalityCause || MortalityCause.OTHER,
-        productionLogId: newLog.id,
-      };
-      setMortalityRecords(prev => [...prev, mortalityRecord]);
+  const addTransaction = async (txData: Omit<FinancialTransaction, 'id'>): Promise<string> => {
+    if (checkLockAndSwal(txData.date)) return '';
+    try {
+      const isInventoryPurchase = txData.type === 'EXPENSE' && (txData.category === 'Persediaan' || txData.category === 'Pakan' || txData.category === 'Obat');
+      const res = await fetch('/api/transaction/expense', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ txData, isInventoryPurchase })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      await refreshData();
+      return data.id;
+    } catch (e: any) {
+      console.error(e);
+      throw e;
     }
   };
 
-  const saveSale = (saleData: Omit<SalesLog, 'id'>, targetAccountId?: string) => {
-    const newSale = { ...saleData, id: `sale-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
+  const deleteTransaction = async (id: string) => {
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) return;
+    if (checkLockAndSwal(tx.date)) return;
+
+    try {
+      const res = await fetch(`/api/transaction/cancel/${id}`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      await refreshData();
+    } catch (e: any) {
+      console.error(e);
+      throw e;
+    }
+  };
+
+
+  const updateTransaction = async (id: string, updates: Partial<FinancialTransaction>) => {
+    const tx = transactions.find(t => t.id === id);
+    if (tx && checkLockAndSwal(tx.date)) return;
+    setTransactions(prev => prev.map(tx => {
+      if (tx.id === id) {
+        const updated = { ...tx, ...updates };
+        syncRecord('poultry_transactions', updated);
+        return updated;
+      }
+      return tx;
+    }));
+  };
+
+  /** FIX #1 + #2 + #4: saveProduction now uses API Backend */
+  const saveProduction = async (logData: Omit<ProductionLog, 'id'>) => {
+    if (checkLockAndSwal(logData.date)) return;
+    try {
+      const res = await fetch('/api/transaction/production', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...logData, inputBy: 'System' })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      await refreshData();
+    } catch (e: any) {
+      console.error(e);
+      throw e;
+    }
+  };
+
+  const saveSale = async (saleData: Omit<SalesLog, 'id'>, targetAccountId?: string) => {
+    if (checkLockAndSwal(saleData.date)) return;
+    const newSale = { ...saleData, id: generateUUID() };
     setSalesLogs(prev => [...prev, newSale]);
+    syncRecord('poultry_sales_logs', newSale);
 
     // Always deduct from inventory for both paid and free sales
-    let stockValid = true;
-    setInventory(prev => {
-      const item = prev.find(i => i.type === ItemType.EGG_STOCK && i.eggCategory === saleData.category && i.houseId === saleData.houseId);
-      if (item && item.quantity < saleData.quantity) {
-        stockValid = false;
-        return prev;
+    setInventory(prev => prev.map(item => {
+      if (item.type === ItemType.EGG_STOCK && item.eggCategory === saleData.category && item.houseId === saleData.houseId) {
+        const updated = { ...item, quantity: Math.max(0, item.quantity - saleData.quantity) };
+        syncRecord('poultry_inventory_v2', updated);
+        return updated;
       }
-      return prev.map(item => {
-        if (item.type === ItemType.EGG_STOCK && item.eggCategory === saleData.category && item.houseId === saleData.houseId) {
-          return { ...item, quantity: Math.max(0, item.quantity - saleData.quantity) };
-        }
-        return item;
-      });
-    });
-
-    if (!stockValid) {
-        console.error("Sale aborted: Insufficient stock.");
-        return;
-    }
+      return item;
+    }));
 
     // Use house-specific kas account, fallback to any cash account
     const selectedAcc = accounts.find(a => a.id === targetAccountId)
@@ -602,40 +562,38 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       || accounts[0];
 
 
-    const txId = addTransaction({
+    const txId = await addTransaction({
       houseId: saleData.houseId,
       date: saleData.date,
-      description: saleData.isFree 
+      description: saleData.isFree
         ? `Alokasi Telur Gratis: ${saleData.category} - ${saleData.customer || 'Umum'}`
         : `Penjualan Telur: ${saleData.category} - ${saleData.customer || 'Umum'}`,
       qty: `${saleData.quantity} butir`,
       price: saleData.isFree ? 0 : saleData.price,
       total: saleData.isFree ? 0 : saleData.total,
-      account: saleData.isFree ? 'Persediaan' : selectedAcc.name,
+      account: saleData.isFree ? 'Pemberian Gratis' : 'Pendapatan Jual Telur',
       type: 'INCOME',
       category: saleData.isFree ? 'Free Goods' : 'Penjualan'
     });
 
     // Create journal entry if it's a paid sale
     if (!saleData.isFree && saleData.total > 0) {
-      const journalId = `j-${Date.now()}`;
-      setJournalEntries(prev => [...prev, {
-        id: journalId,
-        date: saleData.date,
-        description: `Penjualan Telur: ${saleData.category}`,
-        reference: txId
-      }]);
-
-      setJournalLines(prev => [
-        ...prev,
-        { id: `jl-${Date.now()}-1`, journalId, accountId: selectedAcc.id, debit: saleData.total, credit: 0, houseId: saleData.houseId },
-        { id: `jl-${Date.now()}-2`, journalId, accountId: 'acc-penjualan-telur', debit: 0, credit: saleData.total, houseId: saleData.houseId }
-      ]);
+      addJournalEntry(
+        {
+          date: saleData.date,
+          description: `Penjualan Telur: ${saleData.category}`,
+          reference: txId
+        },
+        [
+          { accountId: selectedAcc.id, debit: saleData.total, credit: 0, houseId: saleData.houseId },
+          { accountId: 'acc-penjualan-telur', debit: 0, credit: saleData.total, houseId: saleData.houseId }
+        ]
+      );
     }
   };
 
   // Recipe CRUD
-  const addRecipe = (r: any) => setRecipes(prev => [...prev, { ...r, id: `rcp-${Date.now()}` }]);
+  const addRecipe = (r: any) => setRecipes(prev => [...prev, { ...r, id: generateUUID() }]);
   const updateRecipe = (id: string, updates: any) => setRecipes(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
   const deleteRecipe = (id: string) => setRecipes(prev => prev.filter(r => r.id !== id));
 
@@ -648,13 +606,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return (log.eggCount / currentCount) * 100;
   };
 
+  /** HHP % (Hen Housed Production) */
+  const getHHP = (houseId: string, initialCount: number): number => {
+    const logs = productionLogs.filter(p => p.houseId === houseId);
+    if (logs.length === 0 || initialCount === 0) return 0;
+    const totalEggs = logs.reduce((sum, log) => sum + log.eggCount, 0);
+    return (totalEggs / initialCount) * 100;
+  };
+
   /** Cumulative FCR = total feed consumed / total egg kg for a house */
   const getCumulativeFCR = (houseId: string): number => {
     const logs = productionLogs.filter(p => p.houseId === houseId);
     const totalFeed = logs.reduce((a, b) => a + b.feedConsumed, 0);
-    const totalButir = logs.reduce((a, b) => a + b.totalButir, 0);
-    if (totalButir === 0) return 0;
-    return totalFeed / totalButir;
+    // FIX #4: Estimate egg mass if eggWeight is missing (assume 62.5g or 0.0625kg per egg)
+    const totalKg = logs.reduce((a, b) => a + (b.eggWeight || (b.eggCount * 0.0625)), 0);
+    if (totalKg === 0) return 0;
+    return totalFeed / totalKg;
   };
 
   /** Average feed intake per bird per day (grams), based on most recent log */
@@ -670,7 +637,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const logs = productionLogs.filter(p => p.houseId === houseId);
     const totalFeed = logs.reduce((a, b) => a + b.feedConsumed, 0);
     const totalButir = logs.reduce((a, b) => a + b.totalButir, 0);
-    const cumulativeFCR = totalButir > 0 ? totalFeed / totalButir : 0;
+    // Estimate egg mass if missing
+    const totalKg = logs.reduce((a, b) => a + (b.eggWeight || (b.eggCount * 0.0625)), 0);
+    const cumulativeFCR = totalKg > 0 ? totalFeed / totalKg : 0;
 
     // 1. Feed Cost (Consumed Feed * Unit Price)
     const totalFeedCost = logs.reduce((acc, log) => {
@@ -679,14 +648,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }, 0);
 
     // 2. Operational Expenses (Labor, Utilities, Medication) from Transactions
-    const houseOpEx = transactions.filter(t => 
-      t.houseId === houseId && 
-      t.type === 'EXPENSE' && 
-      t.category !== 'Pelunasan' &&
-      t.category !== 'Persediaan'
-    );
+    const houseOpEx = transactions.filter(t => {
+      if (t.houseId !== houseId || t.type !== 'EXPENSE') return false;
+      const account = accounts.find(a => a.id === t.account || a.name === t.account);
+      // We exclude assets (Capex) and Inventory purchases (DM) to get OpEx
+      // Inventory is handled separately as "Consumed Feed"
+      return account &&
+        account.category === 'EXPENSE' &&
+        t.category !== 'Persediaan' &&
+        t.category !== 'Pelunasan';
+    });
     const totalOtherDirectCosts = houseOpEx.reduce((acc, t) => acc + t.total, 0);
-    
+
     // 3. Depreciation Reserves (Sinking Fund)
     const houseSinkingFund = sinkingFundAllocations.filter(a => (a as any).houseId === houseId);
     const totalSinkingFund = houseSinkingFund.reduce((acc, a) => acc + a.amount, 0);
@@ -694,6 +667,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Total HPP = Feed + OpEx + Depreciation
     const totalProductionCost = totalFeedCost + totalOtherDirectCosts + totalSinkingFund;
     const hppPerButir = totalButir > 0 ? totalProductionCost / totalButir : 0;
+    const hppPerKg = totalKg > 0 ? totalProductionCost / totalKg : 0;
 
     const totalIncome = salesLogs
       .filter(s => s.houseId === houseId && !s.isFree)
@@ -705,17 +679,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       cumulativeFCR,
       feedIntakePerBirdGrams: getFeedIntakePerBird(houseId, currentCount),
       hppPerButir,
+      hppPerKg,
       totalButir,
+      totalKg,
       totalFeedCost: totalProductionCost,
       netPL,
     };
   };
 
-  const saveFarmSettings = (settings: Partial<FarmSettings>) => {
+  const saveFarmSettings = async (settings: Partial<FarmSettings>) => {
     setFarmSettings(prev => ({ ...prev, ...settings }));
+    syncRecord('poultry_farm_settings', settings);
   };
 
-  const addModalAwal = (amount: number, description = 'Modal Awal', houseId?: string, targetAccountId?: string) => {
+  const addModalAwal = async (amount: number, description = 'Modal Awal', houseId?: string, targetAccountId?: string) => {
     const txId = `tx-${Date.now()}`;
     // Prefer house-specific kas account
     const kasAccountId = targetAccountId
@@ -733,7 +710,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       { accountId: 'acc-modal', debit: 0, credit: amount, houseId }
     ]);
 
-    addTransaction({
+    await addTransaction({
       houseId,
       date: new Date().toISOString().split('T')[0],
       description,
@@ -744,7 +721,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       type: 'MODAL',
       journalId
     });
-    saveFarmSettings({ initialCapital: farmSettings.initialCapital + amount });
+    await saveFarmSettings({ initialCapital: farmSettings.initialCapital + amount });
   };
 
   /**
@@ -767,7 +744,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * fromHouseId = kandang yang "meminjam" (berhutang)
    * toHouseId   = kandang yang "menanggung" (berpiutang)
    */
-  const createInterHouseDebt = (
+  const createInterHouseDebt = async (
     fromHouseId: string,
     toHouseId: string,
     amount: number,
@@ -777,7 +754,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const baseId = `iht-${Date.now()}`;
 
     // Kandang fromHouse: HUTANG (liability increases)
-    addAPARRecord({
+    await addAPARRecord({
       type: 'HUTANG',
       entityName: `Kandang — Internal Transfer`,
       description: `[Hutang Antar Kandang] ${description}`,
@@ -792,7 +769,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } as any);
 
     // Kandang toHouse: PIUTANG (asset increases)
-    addAPARRecord({
+    await addAPARRecord({
       type: 'PIUTANG',
       entityName: `Kandang — Internal Transfer`,
       description: `[Piutang Antar Kandang] ${description}`,
@@ -813,17 +790,46 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: `Transfer Internal: ${description}`,
     }, [
       { accountId: 'acc-piutang-antar', debit: amount, credit: 0, houseId: toHouseId },
-      { accountId: 'acc-hutang-antar',  debit: 0, credit: amount, houseId: fromHouseId },
+      { accountId: 'acc-hutang-antar', debit: 0, credit: amount, houseId: fromHouseId },
     ]);
+  };
+
+  const closeMonth = async (yearMonth: string, inputBy: string) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${apiUrl}/api/transaction/closing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yearMonth, inputBy })
+      });
+      if (!response.ok) throw new Error('Gagal melakukan closing bulan');
+      const resData = await response.json();
+      if (!resData.success) throw new Error(resData.error || 'Gagal melakukan closing bulan');
+      await refreshData();
+      return resData;
+    } catch (error) {
+      console.error('Tutup buku error:', error);
+      throw error;
+    }
   };
 
 
   const addAccount = (accountData: Omit<Account, 'id'>) => {
-    setAccounts(prev => [...prev, { ...accountData, id: `acc-${Date.now()}` }]);
+    const id = generateUUID();
+    const newAccount = { ...accountData, id };
+    setAccounts(prev => [...prev, newAccount]);
+    syncRecord('poultry_accounts', newAccount);
   };
 
   const updateAccount = (id: string, updates: Partial<Account>) => {
-    setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    setAccounts(prev => prev.map(a => {
+      if (a.id === id) {
+        const updated = { ...a, ...updates };
+        syncRecord('poultry_accounts', updated);
+        return updated;
+      }
+      return a;
+    }));
   };
 
   const deleteAccount = (id: string) => {
@@ -831,11 +837,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addAsset = (assetData: Omit<Asset, 'id' | 'maintenanceHistory'>) => {
-    setAssets(prev => [...prev, { ...assetData, id: `ast-${Date.now()}`, maintenanceHistory: [] }]);
+    const id = generateUUID();
+    const newAsset: Asset = { ...assetData, id, maintenanceHistory: [] };
+    setAssets(prev => [...prev, newAsset]);
+    syncRecord('poultry_assets', newAsset);
   };
 
   const updateAsset = (id: string, updates: Partial<Asset>) => {
-    setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    setAssets(prev => prev.map(a => {
+      if (a.id === id) {
+        const updated = { ...a, ...updates };
+        syncRecord('poultry_assets', updated);
+        return updated;
+      }
+      return a;
+    }));
   };
 
   const updateAssetStatus = (id: string, status: AssetCondition, user: string, notes?: string) => {
@@ -885,11 +901,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       addOperationalExpenseRecord, realizeSinkingFund,
       getAccountBalance, getTrialBalance,
       addRecipe, updateRecipe, deleteRecipe,
-      getHDP, getCumulativeFCR, getFeedIntakePerBird, getFlockAnalytics,
+      getHDP, getHHP, getCumulativeFCR, getFeedIntakePerBird, getFlockAnalytics,
       farmSettings, saveFarmSettings, addModalAwal,
       assets, addAsset, updateAsset, updateAssetStatus,
       addAccount, updateAccount, deleteAccount,
-      getHouseCashBalance, createInterHouseDebt,
+      getHouseCashBalance, createInterHouseDebt, closeMonth, refreshData
     }}>
       {children}
     </GlobalContext.Provider>

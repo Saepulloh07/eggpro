@@ -1,0 +1,21 @@
+DAFTAR BUG & DEFECT
+===================
+1. [LOGIC BUG] Race Condition pada Sinkronisasi Stok:
+   - Deskripsi: Jika 2 admin berbeda login di perangkat berbeda, dan mengurangi stok pakan pada saat yang sama (misal sisa 10kg, A ambil 8kg, B ambil 8kg), masing-masing frontend melihat stok cukup. Keduanya sinkronisasi ke backend dan berpotensi membuat stok menjadi -6kg jika backend tidak melakukan double-check.
+   - Impact: Critical (Inkonsistensi data gudang).
+   
+2. [UI BUG] Edit Transaksi Lama:
+   - Deskripsi: Jika sebuah transaksi pembelian pakan di masa lalu diedit nominal/qty-nya, sistem mengubah data `lastPrice` dan nilai transaksi, namun TIDAK menghitung ulang (recalculate) nilai HPP / Moving Average untuk pemakaian pakan setelah tanggal tersebut.
+   - Impact: High (Kesalahan valuasi persediaan di masa depan).
+
+3. [SECURITY BUG] Client-Side Data Manipulation:
+   - Deskripsi: State akun, saldo, dan pengaturan farm disimpan di IndexedDB/LocalStorage. User bisa menggunakan DevTools untuk mengubah saldo Sinking Fund, lalu memicu sinkronisasi yang akan meng-overwrite data di backend.
+   - Impact: Critical (Fraud Keuangan).
+
+4. [UX BUG] Tombol Simpan tanpa Loading Indicator di beberapa modul:
+   - Deskripsi: Form selain Produksi (seperti form Aset dan Pengaturan) mungkin belum konsisten mem-block tombol saat proses `isSaving` bernilai true, berpotensi memicu double-submit.
+   - Impact: Low (Duplicate data).
+
+5. [DATA BUG] Soft Delete Missing:
+   - Deskripsi: Pemanggilan `deleteTransaction` menghapus row di state dan backend. Ini melanggar prinsip akuntansi dimana transaksi yang salah harusnya di-Void / Jurnal Balik (Reversal), bukan dihapus permanen.
+   - Impact: Medium (Tidak lulus standar audit keuangan resmi).

@@ -34,9 +34,8 @@ const MORTALITY_CAUSE_LABELS: Record<MortalityCause, string> = {
 
 export default function Production() {
   const { activeHouse } = useHouse();
-  const { saveProduction } = useGlobalData();
+  const { saveProduction, inventory, getCumulativeFCR, productionLogs, farmSettings, getHHP } = useGlobalData();
   const { updateFlock, getActiveFlockByHouse } = useFlock();
-  const { inventory, getCumulativeFCR, productionLogs, farmSettings } = useGlobalData();
   const { user } = useApp();
 
   const [showHistory, setShowHistory] = useState(false);
@@ -58,6 +57,8 @@ export default function Production() {
     [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0,
     [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0,
   });
+  const [actualEggWeight, setActualEggWeight] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleBreakdownChange = (cat: string, val: number) =>
     setBreakdown(prev => ({ ...prev, [cat]: val }));
@@ -65,31 +66,30 @@ export default function Production() {
   const totalBreakdownButir = useMemo(() =>
     Object.values(breakdown).reduce((a: number, b: unknown) => a + (b as number), 0), [breakdown]);
 
-  // Auto calculate weight in KG based on standard
-  const eggWeight = useMemo(() => {
-    let totalKg = 0;
-    // Remban: ~19.75 kg / 250
-    totalKg += (breakdown[EggCategory.BM] || 0) * (19.75 / 250);
-    // Bujang: ~18.75 kg / 250
-    totalKg += (breakdown[EggCategory.KRC] || 0) * (18.75 / 250);
-    // KS: ~17 kg / 250
-    totalKg += (breakdown[EggCategory.KS] || 0) * (17 / 250);
-    // Pelor: ~15 kg / 250
-    totalKg += (breakdown[EggCategory.PELOR] || 0) * (15 / 250);
-    // Retak/Pecah/Bujang Retak/KS Retak: assume ~18 kg / 300
-    const others = (breakdown[EggCategory.RETAK] || 0) +
-      (breakdown[EggCategory.PECAH] || 0) +
-      (breakdown[EggCategory.KRC_RETAK] || 0) +
-      (breakdown[EggCategory.KS_RETAK] || 0);
-    totalKg += others * (18 / 300);
-    return totalKg;
-  }, [breakdown]);
-
   const eggCount = totalBreakdownButir;
   const pecahCount = breakdown[EggCategory.PECAH] || 0;
   const retakCount = (breakdown[EggCategory.RETAK] || 0) + (breakdown[EggCategory.KRC_RETAK] || 0) + (breakdown[EggCategory.KS_RETAK] || 0);
 
+  // 7-Day Rolling Average Egg Weight
+  const rollingAvgWeight = useMemo(() => {
+    const logs = productionLogs
+      .filter(l => l.houseId === activeHouse?.id && l.eggCount > 0 && l.eggWeight > 0)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 7);
+    
+    if (logs.length === 0) return 0.0625; // default 62.5g
+    const totalW = logs.reduce((acc, l) => acc + l.eggWeight, 0);
+    const totalC = logs.reduce((acc, l) => acc + (l.totalButir || l.eggCount), 0);
+    return totalC > 0 ? totalW / totalC : 0.0625;
+  }, [productionLogs, activeHouse]);
 
+  // Auto calculate weight in KG based on standard or 7-day rolling average
+  const eggWeight = useMemo(() => {
+    if (totalBreakdownButir > 0) {
+       return totalBreakdownButir * rollingAvgWeight;
+    }
+    return 0;
+  }, [totalBreakdownButir, rollingAvgWeight]);
   // Feed items from inventory
   const feedItems = useMemo(() =>
     inventory.filter(i => i.type === ItemType.FINISHED_FEED || i.type === ItemType.RAW_MATERIAL),
@@ -135,6 +135,14 @@ export default function Production() {
     return (eggCount / activeBatch.currentCount) * 100;
   }, [eggCount, activeBatch]);
 
+  // HHP calculation
+  const hhp = useMemo(() => {
+    if (!activeBatch || activeBatch.initialCount === 0) return 0;
+    // Current day's HHP portion + historical
+    return getHHP(activeHouse?.id || '', activeBatch.initialCount) + (eggCount / activeBatch.initialCount) * 100;
+  }, [eggCount, activeBatch, activeHouse, getHHP]);
+
+
   const standardHDP = getStrainStandardHDP(age.weeks);
 
   // Cumulative FCR
@@ -158,6 +166,7 @@ export default function Production() {
       return;
     }
 
+    setIsSaving(true);
     Swal.fire({
       title: 'Simpan Produksi?',
       html: `
@@ -165,9 +174,10 @@ export default function Production() {
           <p>Umur Ayam: <b>${age.weeks}m ${age.days}h</b></p>
           <p>Pakan (${feedItem?.name || '-'}): <b>${feedConsumed} kg</b></p>
           <p>Total Telur: <b>${totalBreakdownButir.toLocaleString()} butir</b></p>
+          <p>Berat Telur: <b>${(actualEggWeight || eggWeight).toFixed(2)} kg</b></p>
           <p>HDP: <b>${hdp.toFixed(1)}%</b> (Std: ${standardHDP}%)</p>
           <hr class="my-2"/>
-          <p class="text-amber-600 font-bold text-base">FCR Hari Ini: ${currentFCR}</p>
+          <p class="text-amber-600 font-bold text-base">FCR Hari Ini: ${(feedConsumed / (actualEggWeight || eggWeight || 1)).toFixed(2)}</p>
           ${mortality > 0 ? `<p class="text-rose-600 font-bold">Mortalitas: ${mortality} ekor (${MORTALITY_CAUSE_LABELS[mortalityCause]})</p>` : ''}
         </div>
       `,
@@ -177,46 +187,55 @@ export default function Production() {
       cancelButtonColor: '#f1f5f9',
       confirmButtonText: 'Ya, Simpan',
       cancelButtonText: 'Batal',
-    }).then(result => {
+    }).then(async result => {
       if (result.isConfirmed) {
-        saveProduction({
-          houseId: activeHouse?.id || '',
-          date,
-          eggCount,
-          eggWeight, // Added
-          feedConsumed,
-          feedInventoryItemId: effectiveFeedId,
-          mortality,
-          mortalityCause: mortality > 0 ? mortalityCause : undefined,
-          discardedEggs,
-          abnormalEggCount: pecahCount + retakCount + discardedEggs,
-          breakdown,
-          totalButir: totalBreakdownButir,
-          inputTime: new Date().toISOString(),
-          inputBy: user?.name || 'Sistem',
-        });
+        setIsSaving(true);
+        try {
+          await saveProduction({
+            houseId: activeHouse?.id || '',
+            date,
+            eggCount,
+            eggWeight: actualEggWeight || eggWeight,
+            feedConsumed,
+            feedInventoryItemId: effectiveFeedId,
+            mortality,
+            mortalityCause: mortality > 0 ? mortalityCause : undefined,
+            discardedEggs,
+            abnormalEggCount: pecahCount + retakCount + discardedEggs,
+            breakdown,
+            totalButir: totalBreakdownButir,
+            inputTime: new Date().toISOString(),
+            inputBy: user?.name || 'Sistem',
+          });
 
-        if (mortality > 0 && activeBatch) {
-          updateFlock(activeBatch.id, { currentCount: activeBatch.currentCount - mortality });
-          // Mortality threshold alert
-          const threshold = farmSettings.mortalityAlertThreshold;
-          const mortalityPct = (mortality / activeBatch.currentCount) * 100;
-          if (mortalityPct > threshold) {
-            Swal.fire({
-              title: '⚠️ Mortalitas Melebihi Ambang Batas!',
-              html: `<div class="text-sm"><p>Mortalitas hari ini: <b>${mortality} ekor (${mortalityPct.toFixed(2)}%)</b></p><p>Ambang batas normal: <b>${threshold}%</b></p><p class="text-red-500 font-bold mt-2">Segera periksa kondisi kandang dan konsultasikan ke dokter hewan!</p></div>`,
-              icon: 'warning',
-              confirmButtonColor: '#e11d48',
-            });
+          if (mortality > 0 && activeBatch) {
+            updateFlock(activeBatch.id, { currentCount: activeBatch.currentCount - mortality });
+            // Mortality threshold alert
+            const threshold = farmSettings.mortalityAlertThreshold;
+            const mortalityPct = (mortality / activeBatch.currentCount) * 100;
+            if (mortalityPct > threshold) {
+              Swal.fire({
+                title: '⚠️ Mortalitas Melebihi Ambang Batas!',
+                html: `<div class="text-sm"><p>Mortalitas hari ini: <b>${mortality} ekor (${mortalityPct.toFixed(2)}%)</b></p><p>Ambang batas normal: <b>${threshold}%</b></p><p class="text-red-500 font-bold mt-2">Segera periksa kondisi kandang dan konsultasikan ke dokter hewan!</p></div>`,
+                icon: 'warning',
+                confirmButtonColor: '#e11d48',
+              });
+            } else {
+              Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan & inventori diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
+            }
           } else {
             Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan & inventori diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
           }
-        } else {
-          Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan & inventori diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
-        }
 
-        setMortality(0); setFeedConsumed(0); setDiscardedEggs(0);
-        setBreakdown({ [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0, [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0, [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0 });
+          setMortality(0); setFeedConsumed(0); setDiscardedEggs(0); setActualEggWeight(null);
+          setBreakdown({ [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0, [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0, [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0 });
+        } catch (error: any) {
+          Swal.fire({ title: 'Gagal', text: error.message || 'Terjadi kesalahan saat menyimpan data.', icon: 'error' });
+        } finally {
+          setIsSaving(false);
+        }
+      } else {
+        setIsSaving(false);
       }
     });
   };
@@ -320,7 +339,7 @@ export default function Production() {
       )}
 
       {/* Analytics Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         {/* HDP */}
         <div className={cn(
           'p-4 border shadow-sm relative overflow-hidden',
@@ -334,6 +353,19 @@ export default function Production() {
           <p className="text-[9px] text-slate-400 font-bold mt-1">Std: {standardHDP}%</p>
         </div>
 
+        {/* HHP */}
+        <div className={cn(
+          'p-4 border shadow-sm relative overflow-hidden',
+          hhp >= standardHDP ? 'bg-emerald-50 border-emerald-200' : hhp > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
+        )}>
+          <TrendingUp size={40} className="absolute right-2 top-2 opacity-[0.07] hidden sm:block" />
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">HHP Saat Ini</p>
+          <p className={cn('text-xl lg:text-2xl font-black italic', hhp >= standardHDP ? 'text-emerald-600' : 'text-amber-600')}>
+            {hhp.toFixed(1)}%
+          </p>
+          <p className="text-[9px] text-slate-400 font-bold mt-1">Total thd Populasi Awal</p>
+        </div>
+
         {/* FCR Live */}
         <div className="p-4 bg-slate-900 border border-slate-800 shadow-sm relative overflow-hidden">
           <Activity size={40} className="absolute right-2 top-2 opacity-[0.07] text-amber-500 hidden sm:block" />
@@ -343,7 +375,7 @@ export default function Production() {
         </div>
 
         {/* Feed Intake per Bird */}
-        <div className="p-4 bg-white border border-slate-200 shadow-sm relative overflow-hidden col-span-2 lg:col-span-1">
+        <div className="p-4 bg-white border border-slate-200 shadow-sm relative overflow-hidden">
           <Flame size={40} className="absolute right-2 top-2 opacity-[0.05] hidden sm:block" />
           <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Intake / Ekor</p>
           <p className="text-xl lg:text-2xl font-black italic text-slate-900">{feedIntakePerBird.toFixed(0)}<span className="text-sm font-bold text-slate-400 ml-1">g</span></p>
@@ -361,11 +393,11 @@ export default function Production() {
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm focus:outline-none focus:border-amber-500" />
             </div>
 
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-sm">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block mb-2">Total Berat Telur (kg) — Auto-kalkulasi</label>
-              <input type="number" readOnly value={eggWeight.toFixed(2)}
-                className="w-full bg-amber-100/50 border border-amber-300 rounded-sm px-4 py-3 text-sm font-black text-amber-900 focus:outline-none" />
-              <p className="text-[9px] text-amber-600 mt-2 leading-relaxed">Berat dikalkulasi otomatis dari standar bobot per peti (250 butir): Remban (19.75kg), Bujang (18.75kg), KS (17kg), Pelor (15kg).</p>
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-sm">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 block mb-2">Berat Timbangan Riel (kg)</label>
+              <input type="number" step="0.01" placeholder={eggWeight.toFixed(2)} value={actualEggWeight || ''} onChange={e => setActualEggWeight(Number(e.target.value))}
+                className="w-full bg-white border border-emerald-300 rounded-sm px-4 py-3 text-sm font-black text-emerald-900 focus:outline-none focus:border-emerald-500" />
+              <p className="text-[9px] text-emerald-600 mt-2 leading-relaxed italic">Biarkan kosong untuk menggunakan estimasi otomatis ({eggWeight.toFixed(2)} kg).</p>
             </div>
 
             {/* FIX #1: Feed Selector */}
@@ -454,12 +486,16 @@ export default function Production() {
             </div>
 
             <div className="mt-8 lg:mt-10 pt-6 border-t border-slate-100 flex items-center justify-end gap-3 lg:gap-4">
-              <button onClick={handleReset} className="px-4 lg:px-6 py-3 text-slate-400 font-bold text-[10px] lg:text-xs uppercase tracking-widest hover:text-slate-900 transition-colors">
+              <button disabled={isSaving} onClick={handleReset} className="px-4 lg:px-6 py-3 text-slate-400 font-bold text-[10px] lg:text-xs uppercase tracking-widest hover:text-slate-900 transition-colors">
                 Reset
               </button>
-              <button onClick={handleSave} className="bg-slate-900 text-white px-6 lg:px-8 py-3.5 lg:py-4 rounded-sm font-bold text-[9px] lg:text-[10px] uppercase tracking-[0.15em] lg:tracking-[0.2em] flex items-center gap-2 hover:bg-slate-800 transition-all shadow-md group">
-                <Save size={14} className="group-hover:text-amber-500 transition-colors" />
-                <span>Simpan Produksi</span>
+              <button
+                disabled={isSaving}
+                onClick={handleSave}
+                className="flex items-center gap-2 lg:gap-3 bg-slate-900 text-white px-6 lg:px-10 py-3 lg:py-4 rounded-sm font-bold text-[10px] lg:text-xs uppercase tracking-[0.2em] hover:bg-slate-800 transition-all shadow-xl disabled:opacity-50"
+              >
+                <Save size={16} />
+                <span>{isSaving ? 'Menyimpan...' : 'Simpan Produksi'}</span>
               </button>
             </div>
           </div>

@@ -1,0 +1,21 @@
+REKOMENDASI PERBAIKAN PRIORITAS TINGGI
+======================================
+1. REFACTORING KE ARSITEKTUR BACKEND-HEAVY (API-Driven)
+   - Masalah: Semua logika bisnis (HPP, Jurnal, Mutasi) ada di `GlobalContext.tsx`.
+   - Solusi: Frontend hanya bertugas mem-parsing UI. Form disubmit via API ke Node.js. Backend menjalankan `Prisma.$transaction` untuk memotong stok, menjurnal, dan membuat histori secara atomik (All-or-Nothing).
+
+2. IMPLEMENTASI JURNAL BALIK (REVERSAL JOURNAL)
+   - Masalah: User bisa mendelete transaksi, yang berakibat jejak audit (Audit Trail) hilang total.
+   - Solusi: Nonaktifkan fungsi `DELETE` untuk transaksi yang sudah melewati periode closing harian. Ganti dengan fitur "Batalkan Transaksi", yang secara otomatis membuat Jurnal Balik (Debit & Kredit dibalik) tanpa menghapus row asli.
+
+3. VALIDASI STOK SERVER-SIDE & ROW LOCKING
+   - Masalah: User bisa memakai barang melebihi kuantitas nyata jika terjadi concurrent requests.
+   - Solusi: Pada database (MySQL/PostgreSQL), terapkan klausa `UPDATE inventory SET qty = qty - X WHERE id = Y AND qty >= X`. Jika affected rows = 0, tolak transaksi dengan error "Out of Stock".
+
+4. END-OF-DAY / END-OF-MONTH CLOSING ROUTINE
+   - Masalah: Penyusutan dan HPP dihitung on-the-fly, membuat laporan berisiko berubah di masa depan jika ada parameter master (seperti salvage value) yang diupdate.
+   - Solusi: Buat tombol "Tutup Buku Bulanan". Sistem akan meng-generate jurnal mati (hard-journal) untuk biaya penyusutan, sinking fund, dan mengunci seluruh data pada bulan tersebut agar tidak bisa diedit.
+
+5. SERVER-TIME SYNCHRONIZATION
+   - Masalah: Kronologi data bisa kacau akibat jam/tanggal HP user.
+   - Solusi: Paksa penggunaan waktu server (`Date.now()` dari server) untuk semua timestamp pembuatan transaksi. Waktu lokal hanya digunakan untuk visualisasi zona waktu.

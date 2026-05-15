@@ -131,6 +131,9 @@ export interface APARRecord {
   relatedTransactionId?: string;
   houseId?: string; // Tagging per house
   paymentHistory: PaymentHistoryEntry[];
+  isInterHouse?: boolean;      // NEW: For inter-house debt
+  fromHouseId?: string;
+  toHouseId?: string;
 }
 
 // Operational Expense (non-inventory daily expenses)
@@ -250,6 +253,7 @@ export interface InventoryItem {
   reorderPoint: number;
   lastPrice: number;             // Represents average cost (Average Cost method)
   eggCategory?: EggCategory;     // For EGG_STOCK items — which egg category this represents
+  paidByHouseId?: string;        // NEW: Who paid for this stock (to avoid circular AP/AR)
 }
 
 export interface Sale {
@@ -282,6 +286,7 @@ export interface Asset {
   houseId: string;
   name: string;
   category: 'ALAT PRODUKSI' | 'KENDARAAN' | 'BANGUNAN' | 'LAINNYA';
+  quantity: number; // NEW: Jumlah barang
   purchaseDate: string;
   purchasePrice: number;
   expectedLifeYears: number;
@@ -393,7 +398,9 @@ export interface FlockAnalytics {
   cumulativeFCR: number;
   feedIntakePerBirdGrams: number;
   hppPerButir: number;          // Harga Pokok Produksi per butir telur
+  hppPerKg: number;             // Harga Pokok Produksi per kg telur
   totalButir: number;
+  totalKg: number;
   totalFeedCost: number;
   netPL?: number;              // SUPER_ADMIN only
 }
@@ -433,6 +440,7 @@ export interface FarmSettings {
   sinkingFundDocPct: number;         // Sinking fund untuk DOC (%)
   sinkingFundHousePct: number;       // Sinking fund untuk Peremajaan (%)
   sinkingFundReservePct: number;     // Sinking fund untuk Dana Cadangan (%)
+  lastClosingDate?: string;          // NEW: Date before which data cannot be edited (Lock Period)
 }
 
 export const DEFAULT_FARM_SETTINGS: FarmSettings = {
@@ -471,4 +479,45 @@ export const DEFAULT_FARM_SETTINGS: FarmSettings = {
   sinkingFundDocPct: 10,
   sinkingFundHousePct: 5,
   sinkingFundReservePct: 5,
+  lastClosingDate: '2020-01-01',
 };
+
+export const DEFAULT_ACCOUNTS: Account[] = [
+  // ASSETS
+  { id: 'acc-kas', code: '1101', name: 'Kas Utama (Farm)', category: AccountCategory.ASSET, isCashOrBank: true, isSystem: true },
+  { id: 'acc-bank-bca', code: '1102', name: 'Bank BCA', category: AccountCategory.ASSET, isCashOrBank: true, isSystem: true },
+  { id: 'acc-piutang-telur', code: '1103', name: 'Piutang Penjualan Telur', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-piutang-antar', code: '1104', name: 'Piutang Antar Kandang', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-persediaan-pakan', code: '1111', name: 'Persediaan Pakan', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-persediaan-obat', code: '1112', name: 'Persediaan Obat & Vaksin', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-telur-stock', code: '1113', name: 'Persediaan Stok Telur', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-aset-kandang', code: '1201', name: 'Aset Kandang & Bangunan', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-aset-peralatan', code: '1202', name: 'Aset Peralatan', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-aset-ayam', code: '1203', name: 'Aset Ayam (Pullet)', category: AccountCategory.ASSET, isSystem: true },
+  { id: 'acc-bank-cadangan', code: '1301', name: 'Bank (Dana Cadangan Peremajaan)', category: AccountCategory.ASSET, isSystem: true },
+
+  // LIABILITIES
+  { id: 'acc-hutang-pakan', code: '2101', name: 'Hutang Pakan', category: AccountCategory.LIABILITY, isSystem: true },
+  { id: 'acc-hutang-doc', code: '2102', name: 'Hutang DOC', category: AccountCategory.LIABILITY, isSystem: true },
+  { id: 'acc-hutang-antar', code: '2103', name: 'Hutang Antar Kandang', category: AccountCategory.LIABILITY, isSystem: true },
+  { id: 'acc-hutang-dagang', code: '2104', name: 'Hutang Dagang Lainnya', category: AccountCategory.LIABILITY, isSystem: true },
+
+  // EQUITY
+  { id: 'acc-modal', code: '3101', name: 'Modal Pemilik', category: AccountCategory.EQUITY, isSystem: true },
+  { id: 'acc-laba-ditahan', code: '3201', name: 'Laba Ditahan', category: AccountCategory.EQUITY, isSystem: true },
+  { id: 'acc-cadangan-ekuitas', code: '3301', name: 'Cadangan Ekuitas (Sinking Fund)', category: AccountCategory.EQUITY, isSystem: true },
+
+  // REVENUE
+  { id: 'acc-penjualan-telur', code: '4101', name: 'Pendapatan Jual Telur', category: AccountCategory.REVENUE, isSystem: true },
+  { id: 'acc-penjualan-afkir', code: '4102', name: 'Pendapatan Jual Ayam Afkir', category: AccountCategory.REVENUE, isSystem: true },
+  { id: 'acc-penjualan-lain', code: '4103', name: 'Pendapatan Lain-lain', category: AccountCategory.REVENUE, isSystem: true },
+
+  // EXPENSES
+  { id: 'acc-beban-pakan', code: '5101', name: 'Beban Pakan (HPP)', category: AccountCategory.EXPENSE, isSystem: true },
+  { id: 'acc-beban-obat', code: '5102', name: 'Beban Obat & Vaksin (HPP)', category: AccountCategory.EXPENSE, isSystem: true },
+  { id: 'acc-beban-gaji', code: '5201', name: 'Beban Gaji & Upah', category: AccountCategory.EXPENSE, isSystem: true },
+  { id: 'acc-beban-listrik', code: '5202', name: 'Beban Listrik & Air', category: AccountCategory.EXPENSE, isSystem: true },
+  { id: 'acc-beban-penyisihan', code: '5301', name: 'Beban Penyisihan Dana Cadangan', category: AccountCategory.EXPENSE, isSystem: true },
+  { id: 'acc-beban-penyusutan', code: '5401', name: 'Beban Penyusutan Aset', category: AccountCategory.EXPENSE, isSystem: true },
+  { id: 'acc-beban-lain', code: '5999', name: 'Beban Operasional Lainnya', category: AccountCategory.EXPENSE, isSystem: true },
+];
