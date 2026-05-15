@@ -40,6 +40,9 @@ const decryptData = (ciphertext: any): any => {
 export const syncRecord = async (key: string, record: any) => {
   if (!record || !record.id) return;
   
+  // Add timestamp for conflict resolution
+  record.updatedAt = new Date().toISOString();
+  
   // 1. Update/Add to local storage array
   const encryptedLocalData = await localforage.getItem<string>(key);
   let data: any[] = [];

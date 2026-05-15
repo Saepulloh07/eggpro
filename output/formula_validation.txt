@@ -1,0 +1,38 @@
+VALIDASI RUMUS DAN PERHITUNGAN
+==============================
+
+1. HEN DAY PRODUCTION (HDP)
+   - Implementasi: `(eggCount / activeBatch.currentCount) * 100`
+   - Standar: Ya.
+   - Status: PASS.
+   - Catatan: Menghitung produktivitas ayam yang hidup.
+
+2. HEN HOUSED PRODUCTION (HHP)
+   - Implementasi: `(totalEggs / initialCount) * 100`
+   - Standar: Ya.
+   - Status: PASS.
+   - Catatan: Menghitung total telur terhadap investasi awal populasi. Sangat baik untuk menghitung ROI.
+
+3. FEED CONVERSION RATIO (FCR)
+   - Implementasi: `feedConsumed / eggWeight`
+   - Standar: Ya.
+   - Status: PASS.
+   - Catatan: Menggunakan massa telur (kg). Sistem secara cerdas menggunakan estimasi berat (rolling average) jika data timbangan kosong.
+
+4. MOVING AVERAGE COSTING
+   - Implementasi: `(currentVal + newVal) / (currentQty + newQty)`
+   - Standar: Ya (Metode Akuntansi Persediaan).
+   - Status: PASS.
+   - Catatan: Diterapkan pada backend saat pembelian inventory baru.
+
+5. PENYUSUTAN (DEPRECIATION)
+   - Implementasi: `(PurchasePrice - SalvageValue) / (LifeYears * 12)`
+   - Standar: Ya (Garis Lurus).
+   - Status: PASS.
+   - Catatan: Otomatis dihitung dan dijurnal saat Closing Period.
+
+6. UNIT COST (HPP PER BUTIR)
+   - Implementasi: `(Total Beban Pakan + Beban Ops + Penyusutan + Sinking Fund) / Total Butir`
+   - Standar: Ya (Full Costing).
+   - Status: PASS.
+   - Catatan: Mencakup biaya ayam (depreciation) dan biaya kandang.

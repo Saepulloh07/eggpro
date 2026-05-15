@@ -1,16 +1,17 @@
-DAFTAR WARNING & OBSERVASI
-==========================
-1. HHP (Hen Housed Production) Missing:
-   - Metrik ini adalah standar internasional (mengukur efisiensi ayam dari DOC/Pullet yang masuk, bukan hanya yang hidup hari ini). Saat ini aplikasi hanya memunculkan HDP.
-   
-2. Estimasi Berat Telur Fix (62.5g):
-   - Jika timbangan rusak/user malas input berat riil, sistem menggunakan asumsi 0.0625kg per butir. Jika strain yang dipakai menghasilkan telur 58g atau 66g, angka FCR akan sangat meleset. Rekomendasi: Gunakan rata-rata berat 7 hari terakhir sebagai estimasi, bukan konstanta statis.
+DAFTAR WARNING (OPERATIONAL RISKS)
+=================================
 
-3. Ketergantungan Ekstrem pada "Date":
-   - Banyak logika bergantung pada `new Date().toISOString().split('T')[0]`. Waktu diambil dari jam lokal perangkat user. Jika jam/tanggal HP user salah atau di-set mundur (time-travel manipulation), transaksi akan tercatat di masa lalu atau masa depan, merusak kronologi laporan.
+1. [HIGH] Harga Master Telur/Pakan Kosong
+   - Lokasi: Settings -> Master Prices
+   - Risiko: Jika harga pakan (lastPrice) di inventory 0, maka HPP akan terlihat sangat rendah (understated), menyebabkan laporan laba rugi yang menyesatkan.
+   - Mitigasi: Tambahkan peringatan (Alert) di Dashboard jika ada item pakan aktif dengan harga Rp0.
 
-4. Pencatatan Penyusutan Harian/Bulanan:
-   - Fungsi `calculateDepreciation` dijalankan on-the-fly untuk kalkulasi. Tidak ada proses "End of Month / Closing" yang membekukan nilai penyusutan tersebut sebagai jurnal permanen ke buku besar setiap akhir bulan. Hal ini bisa memberatkan load saat menarik laporan tahunan.
+2. [MEDIUM] Sinking Fund Tidak Direalisasi
+   - Lokasi: Finance -> Sinking Fund
+   - Risiko: Sinking fund saat ini masih bersifat manual atau berdasarkan anjuran. Jika owner tidak melakukan "Realize", dana peremajaan tidak akan benar-benar dialokasikan di kas.
+   - Mitigasi: Implementasikan alokasi otomatis setiap akhir bulan (auto-journal) saat Closing Period.
 
-5. Jatah Telur Pekerja:
-   - Ditarik secara paksa dari kategori telur normal (BM). Jika stok BM kosong namun kategori KRC ada, sistem berpotensi eror (stok BM menjadi minus atau pengurangan gagal dilakukan).
+3. [LOW] Reorder Point Pakan
+   - Lokasi: Dashboard Inventory
+   - Risiko: Keterlambatan pembelian pakan karena threshold reorder point terlalu rendah.
+   - Mitigasi: Sistem harus memberikan notifikasi email/whatsapp 3 hari sebelum stok diprediksi habis berdasarkan rata-rata konsumsi.

@@ -22,7 +22,10 @@ import {
   type SinkingFundAllocation,
   SinkingFundType,
   PaymentStatus,
-  DEFAULT_ACCOUNTS
+  DEFAULT_ACCOUNTS,
+  type APARPayment,
+  type CostAllocation,
+  type BankReconciliation
 } from './types';
 import { generateUUID } from './lib/uuid';
 import Swal from 'sweetalert2';
@@ -95,6 +98,11 @@ interface GlobalContextType {
   biosecurityRecords: BiosecurityRecord[];
   operationalExpenses: OperationalExpense[];
   sinkingFundAllocations: SinkingFundAllocation[];
+  aparPayments: APARPayment[];
+  costAllocations: CostAllocation[];
+  bankReconciliations: BankReconciliation[];
+  addCostAllocation: (allocation: Omit<CostAllocation, 'id'>) => Promise<void>;
+  addBankReconciliation: (reconciliation: Omit<BankReconciliation, 'id'>) => Promise<void>;
 
   // Actions
   addBiosecurityRecord: (record: Omit<BiosecurityRecord, 'id'>) => void;
@@ -137,7 +145,8 @@ interface GlobalContextType {
   updateAccount: (id: string, account: Partial<Account>) => void;
   deleteAccount: (id: string) => void;
   getHouseCashBalance: (houseId: string) => number;
-  createInterHouseDebt: (fromHouseId: string, toHouseId: string, amount: number, description: string) => void;
+  addInterHouseTransaction: (fromHouseId: string, toHouseId: string, amount: number, description: string) => Promise<void>;
+  addTransferKas: (fromAccountId: string, toAccountId: string, amount: number, date: string, notes: string) => Promise<void>;
   closeMonth: (yearMonth: string, inputBy: string) => Promise<void>;
   refreshData: () => Promise<void>;
 }
@@ -163,6 +172,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [operationalExpenses, setOperationalExpenses] = useState<OperationalExpense[]>([]);
   const [sinkingFundAllocations, setSinkingFundAllocations] = useState<SinkingFundAllocation[]>([]);
   const [biosecurityRecords, setBiosecurityRecords] = useState<BiosecurityRecord[]>([]);
+  const [aparPayments, setAparPayments] = useState<APARPayment[]>([]);
+  const [costAllocations, setCostAllocations] = useState<CostAllocation[]>([]);
+  const [bankReconciliations, setBankReconciliations] = useState<BankReconciliation[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Removed dangerous useEffect full-syncs to prevent race conditions.
@@ -193,6 +205,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       loadFromDbOrIndexedDB('poultry_op_expenses', setOperationalExpenses),
       loadFromDbOrIndexedDB('poultry_sinking_fund', setSinkingFundAllocations),
       loadFromDbOrIndexedDB('poultry_biosecurity', setBiosecurityRecords),
+      loadFromDbOrIndexedDB('poultry_apar_payments', setAparPayments),
+      loadFromDbOrIndexedDB('poultry_cost_allocations', setCostAllocations),
+      loadFromDbOrIndexedDB('poultry_bank_reconciliations', setBankReconciliations),
     ]);
   };
 
@@ -307,24 +322,27 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         affectedRecord = r;
         const newRemaining = Math.max(0, r.remainingAmount - paymentAmount);
         const newStatus = newRemaining === 0 ? 'CLOSED' : 'PARTIAL';
-        const paymentEntry = {
-          id: `pay-${Date.now()}`,
-          date: new Date().toISOString().split('T')[0],
-          amount: paymentAmount,
-          accountId: paymentAccountId || 'acc-kas',
-          notes,
-        };
         return {
           ...r,
           remainingAmount: newRemaining,
           status: newStatus,
-          paymentHistory: [...(r.paymentHistory || []), paymentEntry],
         };
       }
       return r;
     }));
 
     if (affectedRecord) {
+      const paymentEntry: APARPayment = {
+        id: `pay-${generateUUID()}`,
+        aparRecordId: id,
+        date: new Date().toISOString().split('T')[0],
+        amount: paymentAmount,
+        accountId: paymentAccountId || 'acc-kas',
+        reference: `PAY-${Date.now()}`,
+        notes,
+      };
+      setAparPayments(prev => [...prev, paymentEntry]);
+      syncRecord('poultry_apar_payments', paymentEntry);
       const r = affectedRecord;
       const today = new Date().toISOString().split('T')[0];
       const account = accounts.find(a => a.id === paymentAccountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
@@ -740,11 +758,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   /**
-   * Catat utang-piutang antar kandang.
-   * fromHouseId = kandang yang "meminjam" (berhutang)
-   * toHouseId   = kandang yang "menanggung" (berpiutang)
+   * Catat due to / due from antar kandang (Jurnal Internal).
    */
-  const createInterHouseDebt = async (
+  const addInterHouseTransaction = async (
     fromHouseId: string,
     toHouseId: string,
     amount: number,
@@ -752,36 +768,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   ) => {
     const today = new Date().toISOString().split('T')[0];
     const baseId = `iht-${Date.now()}`;
-
-    // Kandang fromHouse: HUTANG (liability increases)
-    await addAPARRecord({
-      type: 'HUTANG',
-      entityName: `Kandang — Internal Transfer`,
-      description: `[Hutang Antar Kandang] ${description}`,
-      amount,
-      remainingAmount: amount,
-      dueDate: today,
-      status: 'OPEN',
-      houseId: fromHouseId,
-      isInterHouse: true,
-      fromHouseId,
-      toHouseId,
-    } as any);
-
-    // Kandang toHouse: PIUTANG (asset increases)
-    await addAPARRecord({
-      type: 'PIUTANG',
-      entityName: `Kandang — Internal Transfer`,
-      description: `[Piutang Antar Kandang] ${description}`,
-      amount,
-      remainingAmount: amount,
-      dueDate: today,
-      status: 'OPEN',
-      houseId: toHouseId,
-      isInterHouse: true,
-      fromHouseId,
-      toHouseId,
-    } as any);
 
     // Journal entry: Debit Piutang Antar Kandang (toHouse), Credit Hutang Antar Kandang (fromHouse)
     addJournalEntry({
@@ -792,6 +778,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       { accountId: 'acc-piutang-antar', debit: amount, credit: 0, houseId: toHouseId },
       { accountId: 'acc-hutang-antar', debit: 0, credit: amount, houseId: fromHouseId },
     ]);
+  };
+
+  /**
+   * Transfer Saldo Kas / Bank
+   */
+  const addTransferKas = async (fromAccountId: string, toAccountId: string, amount: number, date: string, notes: string) => {
+    const journalId = addJournalEntry({
+      date,
+      reference: `TRF-${Date.now()}`,
+      description: `Transfer Kas: ${notes}`,
+    }, [
+      { accountId: toAccountId, debit: amount, credit: 0 },
+      { accountId: fromAccountId, debit: 0, credit: amount }
+    ]);
+    
+    await addTransaction({
+      date,
+      description: `[TRANSFER] ${accounts.find(a => a.id === fromAccountId)?.name} -> ${accounts.find(a => a.id === toAccountId)?.name} - ${notes}`,
+      qty: '1',
+      price: amount,
+      total: amount,
+      account: accounts.find(a => a.id === fromAccountId)?.name || 'Transfer',
+      type: 'INTERNAL_TRANSFER' as any,
+      category: 'Transfer Kas',
+      journalId
+    });
   };
 
   const closeMonth = async (yearMonth: string, inputBy: string) => {
@@ -841,6 +853,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const newAsset: Asset = { ...assetData, id, maintenanceHistory: [] };
     setAssets(prev => [...prev, newAsset]);
     syncRecord('poultry_assets', newAsset);
+  };
+
+  const addCostAllocation = async (allocationData: Omit<CostAllocation, 'id'>) => {
+    const id = generateUUID();
+    const newAllocation = { ...allocationData, id };
+    setCostAllocations(prev => [...prev, newAllocation]);
+    await syncRecord('poultry_cost_allocations', newAllocation);
+  };
+
+  const addBankReconciliation = async (reconciliationData: Omit<BankReconciliation, 'id'>) => {
+    const id = generateUUID();
+    const newRecon = { ...reconciliationData, id };
+    setBankReconciliations(prev => [...prev, newRecon]);
+    await syncRecord('poultry_bank_reconciliations', newRecon);
   };
 
   const updateAsset = (id: string, updates: Partial<Asset>) => {
@@ -893,7 +919,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     <GlobalContext.Provider value={{
       productionLogs, salesLogs, transactions, inventory, mortalityRecords, recipes,
       accounts, journalEntries, journalLines, stockMutations, apArRecords, biosecurityRecords,
-      operationalExpenses, sinkingFundAllocations,
+      operationalExpenses, sinkingFundAllocations, aparPayments, costAllocations, bankReconciliations,
       addBiosecurityRecord, addBiosecurityRecordsBulk, updateBiosecurityRecord, deleteBiosecurityRecord,
       saveProduction, saveSale, addTransaction, updateTransaction, deleteTransaction,
       updateInventory, addInventoryItem, updateInventoryItem, createStockMutation,
@@ -905,7 +931,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       farmSettings, saveFarmSettings, addModalAwal,
       assets, addAsset, updateAsset, updateAssetStatus,
       addAccount, updateAccount, deleteAccount,
-      getHouseCashBalance, createInterHouseDebt, closeMonth, refreshData
+      getHouseCashBalance, addInterHouseTransaction, addTransferKas, closeMonth, refreshData,
+      addCostAllocation, addBankReconciliation
     }}>
       {children}
     </GlobalContext.Provider>

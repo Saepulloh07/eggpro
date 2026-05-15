@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo } from 'react';
 import {
-    Wallet, Plus, ArrowUpRight, ArrowDownRight, FileText, Calendar, Layers,
+    Wallet, Plus, ArrowUpRight, ArrowDownRight, FileText, Calendar,
     Upload, Camera, Download, Save, BookOpen, Receipt, ShoppingCart, Edit2,
     ChevronLeft, ChevronRight, Egg, Coins, ClipboardList, Building2, BookCopy,
     BarChart3, Scale, TrendingUp, TrendingDown, CircleDollarSign, LayoutDashboard,
@@ -27,9 +27,9 @@ import { EggCategory, Asset, AccountCategory, ExpenseCategory, SinkingFundType }
 export default function Finance() {
     const { activeHouse, houses } = useHouse();
     const { getActiveFlockByHouse } = useFlock();
-    const { productionLogs, salesLogs, transactions, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction, journalEntries, journalLines, apArRecords, accounts, addAPARRecord, updateAPARRecord, addOperationalExpenseRecord, operationalExpenses, sinkingFundAllocations, realizeSinkingFund, getTrialBalance, getAccountBalance, inventory, stockMutations, closeMonth, refreshData, addModalAwal } = useGlobalData();
+    const { productionLogs, salesLogs, transactions, updateTransaction, assets, updateAssetStatus, addAsset, updateAsset, farmSettings, addTransaction, journalEntries, journalLines, apArRecords, accounts, addAPARRecord, updateAPARRecord, addOperationalExpenseRecord, operationalExpenses, sinkingFundAllocations, realizeSinkingFund, getTrialBalance, getAccountBalance, inventory, stockMutations, closeMonth, refreshData, addModalAwal, aparPayments, addTransferKas, addInterHouseTransaction } = useGlobalData();
 
-    const [activeTab, setActiveTab] = useState<'BUKU_TELUR' | 'BUKU_TRANSAKSI' | 'ASET' | 'AKUNTANSI' | 'PENGELUARAN' | 'BUKU_BESAR' | 'NERACA_SALDO'>('BUKU_TELUR');
+    const [activeTab, setActiveTab] = useState<'BUKU_TELUR' | 'BUKU_TRANSAKSI' | 'ASET' | 'AKUNTANSI' | 'PENGELUARAN' | 'TRANSFER_KAS' | 'BUKU_BESAR' | 'NERACA_SALDO'>('BUKU_TELUR');
     const [isOpexModalOpen, setIsOpexModalOpen] = useState(false);
     const [isApArModalOpen, setIsApArModalOpen] = useState(false);
     const [isSinkingModalOpen, setIsSinkingModalOpen] = useState(false);
@@ -70,7 +70,7 @@ export default function Finance() {
         // we check if the category is a known operational category.
         const knownExpenseCategories = ['Pakan', 'Obat', 'Gaji', 'Listrik', 'Air', 'BBM', 'WIFI', 'ATK', 'Konsumsi', 'Sewa', 'Lain-lain'];
         const isKnownOpEx = t.category && knownExpenseCategories.includes(t.category);
-        
+
         return !account || account.category === 'EXPENSE' || isKnownOpEx;
     });
 
@@ -109,18 +109,18 @@ export default function Finance() {
 
     // ACCRUAL FIX: Laba Rugi Berbasis Akrual (Pemakaian & Penjualan Terbukon)
     const totalAccrualIncome = filteredSalesLogs.reduce((acc, curr) => acc + curr.total, 0);
-    
+
     // Usage of materials (pakan/obat)
-    const filteredMutations = isKonsolidasi 
-        ? stockMutations 
+    const filteredMutations = isKonsolidasi
+        ? stockMutations
         : stockMutations.filter(m => m.usedByHouseId === activeHouse?.id || (!m.usedByHouseId && m.sourceLocation === activeHouse?.id));
     const totalUsageCost = filteredMutations
         .filter(m => m.type === 'USAGE')
         .reduce((acc, curr) => acc + curr.totalCost, 0);
 
     // Operational Expenses
-    const filteredOpEx = isKonsolidasi 
-        ? operationalExpenses 
+    const filteredOpEx = isKonsolidasi
+        ? operationalExpenses
         : operationalExpenses.filter(e => e.houseId === activeHouse?.id);
     const totalOpEx = filteredOpEx.reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -323,10 +323,11 @@ export default function Finance() {
         filteredProdLogs.forEach((row, i) => {
             const r = 6 + i; const even = i % 2 === 1;
             s1.getRow(r).values = [
-                new Date(row.date).toLocaleDateString('id-ID'), getNormalButir(row), getSoldByDate(row.date, 'NORMAL', false), getSoldByDate(row.date, 'NORMAL', true),
+                new Date(row.date), getNormalButir(row), getSoldByDate(row.date, 'NORMAL', false), getSoldByDate(row.date, 'NORMAL', true),
                 getRetakButir(row), getSoldByDate(row.date, 'RETAK', false), getSoldByDate(row.date, 'RETAK', true), row.breakdown[EggCategory.PECAH] || 0,
                 row.discardedEggs || 0, row.totalButir ?? (row as any).totalKg ?? 0, +((row.eggCount / (currentPopulation || 1)) * 100).toFixed(2), ''
             ];
+            s1.getCell(`A${r}`).numFmt = 'dd/mm/yyyy';
             ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach(c => styleData(s1.getCell(`${c}${r}`), even));
             s1.getRow(r).height = 16;
         });
@@ -350,8 +351,9 @@ export default function Finance() {
             txList.forEach((t, i) => {
                 const r = 5 + i; const even = i % 2 === 1;
                 runTotal += t.total;
-                ws.getRow(r).values = [i + 1, new Date(t.date).toLocaleDateString('id-ID'), t.description, t.qty, t.price || 0, t.total, new Date(t.date).toLocaleDateString('id-ID'), t.account || '-'];
+                ws.getRow(r).values = [i + 1, new Date(t.date), t.description, t.qty, t.price || 0, t.total, new Date(t.date), t.account || '-'];
                 [1, 2, 3, 4, 5, 6, 7, 8].forEach(ci => styleData(ws.getCell(r, ci), even));
+                ws.getCell(r, 2).numFmt = 'dd/mm/yyyy'; ws.getCell(r, 7).numFmt = 'dd/mm/yyyy';
                 ws.getCell(r, 5).numFmt = formatIDR; ws.getCell(r, 6).numFmt = formatIDR;
                 ws.getCell(r, 1).alignment = { horizontal: 'center' };
                 ws.getRow(r).height = 16;
@@ -383,9 +385,9 @@ export default function Finance() {
         sm.getRow(4).height = 20;
         modalTransactions.forEach((m, i) => {
             const r = 5 + i;
-            sm.getRow(r).values = [i + 1, m.description, m.total, new Date(m.date).toLocaleDateString('id-ID')];
+            sm.getRow(r).values = [i + 1, m.description, m.total, new Date(m.date)];
             [1, 2, 3, 4].forEach(ci => styleData(sm.getCell(r, ci), i % 2 === 1));
-            sm.getCell(r, 3).numFmt = formatIDR;
+            sm.getCell(r, 3).numFmt = formatIDR; sm.getCell(r, 4).numFmt = 'dd/mm/yyyy';
         });
 
         // ── SHEET: LAPORAN LABA RUGI (AKUNTANSI FIX 4: Struktur Laba Kotor & Bersih) ──
@@ -440,9 +442,10 @@ export default function Finance() {
         houseAssets.forEach((asset, i) => {
             const qty = asset.quantity || 1;
             const dep = calculateDepreciation(asset) * qty; const r = 5 + i;
-            s4.getRow(r).values = [i + 1, asset.name, asset.category, qty, new Date(asset.purchaseDate).toLocaleDateString('id-ID'), asset.purchasePrice, asset.condition, dep, (asset.purchasePrice * qty) - dep];
+            s4.getRow(r).values = [i + 1, asset.name, asset.category, qty, new Date(asset.purchaseDate), asset.purchasePrice, asset.condition, dep, (asset.purchasePrice * qty) - dep];
             [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach(ci => styleData(s4.getCell(r, ci), i % 2 === 1));
             [6, 8, 9].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
+            s4.getCell(r, 5).numFmt = 'dd/mm/yyyy';
         });
 
         // ── SHEET: BUKU KAS UMUM ──
@@ -459,8 +462,10 @@ export default function Finance() {
             const debitVal = isDebit ? t.total : 0;
             const kreditVal = !isDebit ? t.total : 0;
             runDebit += debitVal; runKredit += kreditVal;
-            skbu.getRow(r).values = [i + 1, new Date(t.date).toLocaleDateString('id-ID'), t.description, t.type, debitVal || '', kreditVal || '', t.account];
+            const dateObj = new Date(t.date);
+            skbu.getRow(r).values = [i + 1, dateObj, t.description, t.type, debitVal || '', kreditVal || '', t.account];
             [1, 2, 3, 4, 5, 6, 7].forEach(ci => styleData(skbu.getCell(r, ci), even));
+            skbu.getCell(r, 2).numFmt = 'dd/mm/yyyy';
             if (debitVal) { skbu.getCell(r, 5).numFmt = formatIDR; skbu.getCell(r, 5).font = { bold: true, color: { argb: 'FF065F46' } }; }
             if (kreditVal) { skbu.getCell(r, 6).numFmt = formatIDR; skbu.getCell(r, 6).font = { bold: true, color: { argb: 'FF9F1239' } }; }
             skbu.getRow(r).height = 16;
@@ -485,8 +490,9 @@ export default function Finance() {
         sapar.getRow(4).height = 20;
         houseApAr.forEach((r, i) => {
             const row = 5 + i; const even = i % 2 === 1;
-            sapar.getRow(row).values = [i + 1, r.dueDate ? new Date(r.dueDate).toLocaleDateString('id-ID') : '-', r.entityName, r.description || '-', r.amount, r.remainingAmount, r.status];
+            sapar.getRow(row).values = [i + 1, r.dueDate ? new Date(r.dueDate) : '-', r.entityName, r.description || '-', r.amount, r.remainingAmount, r.status];
             [1, 2, 3, 4, 5, 6, 7].forEach(ci => styleData(sapar.getCell(row, ci), even));
+            sapar.getCell(row, 2).numFmt = 'dd/mm/yyyy';
             [5, 6].forEach(ci => { sapar.getCell(row, ci).numFmt = formatIDR; });
             const isHutang = (r as any).type === 'HUTANG';
             sapar.getCell(row, 5).font = { bold: true, color: { argb: isHutang ? 'FF9F1239' : 'FF065F46' } };
@@ -522,21 +528,27 @@ export default function Finance() {
 
     const handleAddModalSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const formData = new FormData(e.target as HTMLFormElement);
-        const amount = Number(formData.get('amount'));
-        const desc = formData.get('description') as string;
+        if (isSaving) return;
+        setIsSaving(true);
+        try {
+            const formData = new FormData(e.target as HTMLFormElement);
+            const amount = Number(formData.get('amount'));
+            const desc = formData.get('description') as string;
 
-        if (amount > 0) {
-            const accountId = formData.get('accountId') as string;
-            const houseId = formData.get('houseId') as string;
-            if (editingModal) {
-                await updateTransaction(editingModal.id, { total: amount, price: amount, description: desc, houseId });
-                Swal.fire({ title: 'Berhasil!', text: 'Modal telah diubah.', icon: 'success', confirmButtonColor: '#0f172a' });
-            } else {
-                await addModalAwal(amount, desc, houseId, accountId);
-                Swal.fire({ title: 'Berhasil!', text: 'Modal telah ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a' });
+            if (amount > 0) {
+                const accountId = formData.get('accountId') as string;
+                const houseId = formData.get('houseId') as string;
+                if (editingModal) {
+                    await updateTransaction(editingModal.id, { total: amount, price: amount, description: desc, houseId });
+                    Swal.fire({ title: 'Berhasil!', text: 'Modal telah diubah.', icon: 'success', confirmButtonColor: '#0f172a' });
+                } else {
+                    await addModalAwal(amount, desc, houseId, accountId);
+                    Swal.fire({ title: 'Berhasil!', text: 'Modal telah ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a' });
+                }
+                setIsModalAwalOpen(false);
             }
-            setIsModalAwalOpen(false);
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -597,9 +609,37 @@ export default function Finance() {
         { id: 'PENGELUARAN', label: 'Pengeluaran', Icon: ClipboardList, short: 'Biaya' },
         { id: 'ASET', label: 'Aset', Icon: Building2, short: 'Aset' },
         { id: 'AKUNTANSI', label: 'Akuntansi', Icon: BookCopy, short: 'Jurnal' },
+        { id: 'TRANSFER_KAS', label: 'Transfer Kas', Icon: ArrowUpRight, short: 'Transfer' },
         { id: 'BUKU_BESAR', label: 'Buku Besar', Icon: BarChart3, short: 'Besar' },
         { id: 'NERACA_SALDO', label: 'Neraca Saldo', Icon: Scale, short: 'Neraca' },
     ] as const;
+
+    const handleTransferKas = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (isSaving) return;
+        setIsSaving(true);
+        try {
+            const formData = new FormData(e.target as HTMLFormElement);
+            const fromAccountId = formData.get('fromAccountId') as string;
+            const toAccountId = formData.get('toAccountId') as string;
+            const amount = Number(formData.get('amount'));
+            const date = formData.get('date') as string;
+            const notes = formData.get('notes') as string;
+
+            if (fromAccountId === toAccountId) {
+                Swal.fire('Error', 'Akun asal dan tujuan tidak boleh sama.', 'error');
+                return;
+            }
+            await addTransferKas(fromAccountId, toAccountId, amount, date, notes);
+            Swal.fire({ title: 'Berhasil', text: 'Transfer Kas berhasil dicatat.', icon: 'success', confirmButtonColor: '#0f172a' });
+            (e.target as HTMLFormElement).reset();
+        } catch (error: any) {
+            Swal.fire('Gagal', error.message, 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
 
     return (
         <>
@@ -864,7 +904,7 @@ export default function Finance() {
                             {activeTab === 'BUKU_TELUR' && (() => {
                                 // AKUNTANSI FIX 5: Rumus HPP Profesional (DM + DL + FOH)
                                 const totalButirProduksi = filteredProdLogs.reduce((s, l) => s + (l.totalButir ?? 0), 0);
-                                
+
                                 // 1. Direct Material: Biaya Pakan (Berdasarkan Konsumsi, bukan Pembelian)
                                 const totalBiayaPakanKonsumsi = filteredProdLogs.reduce((acc, log) => {
                                     const item = inventory.find(i => i.id === log.feedInventoryItemId);
@@ -880,10 +920,10 @@ export default function Finance() {
 
                                 // 3. Factory Overhead (FOH): Operasional (Listrik, Vaksin, Air, dsb)
                                 const totalFOH = houseTransactions
-                                    .filter(t => 
-                                        t.type === 'EXPENSE' && 
-                                        t.category !== 'Pelunasan' && 
-                                        t.category !== 'Aset Tetap' && 
+                                    .filter(t =>
+                                        t.type === 'EXPENSE' &&
+                                        t.category !== 'Pelunasan' &&
+                                        t.category !== 'Aset Tetap' &&
                                         t.category !== 'Persediaan' && // Inventory purchase is not HPP until consumed
                                         !t.category?.includes('Payroll') &&
                                         !t.description.toLowerCase().includes('gaji')
@@ -906,7 +946,7 @@ export default function Finance() {
                                 const totalBiayaProduksi = totalBiayaPakanKonsumsi + totalGaji + totalFOH + ((depLayerPerButir + depCagePerButir) * totalButirProduksi);
                                 const hppDasar = totalButirProduksi > 0 ? totalBiayaProduksi / totalButirProduksi : 0;
                                 const hppKgDasar = totalKgProduksi > 0 ? totalBiayaProduksi / totalKgProduksi : 0;
-                                
+
                                 // HPP dengan Cadangan Risiko
                                 const hppBase = hppDasar + (totalButirProduksi > 0 ? hppCadangan / totalButirProduksi : 0);
                                 const hppKgBase = hppKgDasar + (totalKgProduksi > 0 ? hppCadangan / totalKgProduksi : 0);
@@ -1414,7 +1454,7 @@ export default function Finance() {
                                 <div className="space-y-8">
                                     <div className="bg-white border border-slate-200 shadow-sm">
                                         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                                            <h3 className="font-bold text-sm text-slate-800 uppercase tracking-tight italic">Hutang & Piutang (AP / AR)</h3>
+                                            <h3 className="font-bold text-sm text-slate-800 uppercase tracking-tight italic">Hutang & Piutang (AP / AR) & Aging Report</h3>
                                             <button onClick={() => setIsApArModalOpen(true)} className="bg-slate-900 text-white px-4 py-2 rounded-md text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 flex items-center gap-2">
                                                 <Plus size={12} /> Tambah Tagihan
                                             </button>
@@ -1426,43 +1466,85 @@ export default function Finance() {
                                                         <th className="px-3 py-3">Tgl Jatuh Tempo</th>
                                                         <th className="px-3 py-3">Jenis</th>
                                                         <th className="px-3 py-3">Mitra / Keterangan</th>
-                                                        <th className="px-3 py-3 text-right">Total Tagihan</th>
+                                                        <th className="px-3 py-3 text-right">0-30 Hari</th>
+                                                        <th className="px-3 py-3 text-right">31-60 Hari</th>
+                                                        <th className="px-3 py-3 text-right">61-90 Hari</th>
+                                                        <th className="px-3 py-3 text-right">&gt;90 Hari</th>
                                                         <th className="px-3 py-3 text-right">Sisa Terutang</th>
                                                         <th className="px-3 py-3 text-center">Status</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="text-[10px] divide-y divide-slate-100">
-                                                    {apArRecords.length === 0 ? (
-                                                        <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400 font-bold uppercase">Belum ada Hutang / Piutang</td></tr>
-                                                    ) : apArRecords.map((r, i) => (
-                                                        <tr key={i} className="hover:bg-slate-50">
-                                                            <td className="px-3 py-3 font-bold text-slate-700">{r.dueDate ? new Date(r.dueDate).toLocaleDateString('id-ID') : '-'}</td>
-                                                            <td className="px-3 py-3 font-bold">
-                                                                <span className={cn("px-2 py-1 rounded-sm text-[9px]", r.type === 'HUTANG' ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600")}>
-                                                                    {r.type === 'HUTANG' ? 'HUTANG (AP)' : 'PIUTANG (AR)'}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-3 py-3 text-slate-600 font-bold">{r.entityName}</td>
-                                                            <td className="px-3 py-3 text-right font-mono font-bold">{formatCurrency(r.amount)}</td>
-                                                            <td className="px-3 py-3 text-right font-mono font-bold text-rose-600">{formatCurrency(r.remainingAmount)}</td>
-                                                            <td className="px-3 py-3 text-center">
-                                                                <div className="flex items-center justify-center gap-2">
-                                                                    <span className={cn("px-2 py-1 rounded-sm text-[9px] font-bold uppercase", r.status === 'PAID' || r.status === 'CLOSED' ? "bg-emerald-100 text-emerald-700" : r.status === 'PARTIAL' ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700")}>
-                                                                        {r.status}
-                                                                    </span>
-                                                                    {(r.status !== 'PAID' && r.status !== 'CLOSED') && (
-                                                                        <button
-                                                                            onClick={() => { setSelectedApArId(r.id); setIsSettlementModalOpen(true); }}
-                                                                            className="bg-slate-900 text-white p-1.5 rounded-sm hover:bg-slate-800 transition-all shadow-sm"
-                                                                            title="Bayar / Cicil"
-                                                                        >
-                                                                            <Banknote size={12} />
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
+                                                    {apArRecords.filter(r => !activeHouse || r.houseId === activeHouse.id || !r.houseId).length === 0 ? (
+                                                        <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-400 font-bold uppercase">Belum ada Hutang / Piutang</td></tr>
+                                                    ) : apArRecords.filter(r => !activeHouse || r.houseId === activeHouse.id || !r.houseId).map((r, i) => {
+                                                        const today = new Date();
+                                                        const age = r.dueDate ? Math.floor((today.getTime() - new Date(r.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                                                        const isOverdue = age > 0 && r.remainingAmount > 0;
+                                                        const age0_30 = isOverdue && age <= 30 ? r.remainingAmount : 0;
+                                                        const age31_60 = isOverdue && age > 30 && age <= 60 ? r.remainingAmount : 0;
+                                                        const age61_90 = isOverdue && age > 60 && age <= 90 ? r.remainingAmount : 0;
+                                                        const age90Plus = isOverdue && age > 90 ? r.remainingAmount : 0;
+                                                        const payments = aparPayments.filter(p => p.apArId === r.id);
+
+                                                        return (
+                                                            <React.Fragment key={i}>
+                                                                <tr className="hover:bg-slate-50">
+                                                                    <td className="px-3 py-3 font-bold text-slate-700">{r.dueDate ? new Date(r.dueDate).toLocaleDateString('id-ID') : '-'}</td>
+                                                                    <td className="px-3 py-3 font-bold">
+                                                                        <span className={cn("px-2 py-1 rounded-sm text-[9px]", r.type === 'HUTANG' ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600")}>
+                                                                            {r.type === 'HUTANG' ? 'HUTANG (AP)' : 'PIUTANG (AR)'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="px-3 py-3 text-slate-600 font-bold">{r.entityName} <br /><span className="text-[8px] text-slate-400 font-normal">{r.description}</span></td>
+
+                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-amber-500">{age0_30 > 0 ? formatCurrency(age0_30) : '-'}</td>
+                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-orange-500">{age31_60 > 0 ? formatCurrency(age31_60) : '-'}</td>
+                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-rose-500">{age61_90 > 0 ? formatCurrency(age61_90) : '-'}</td>
+                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-red-600">{age90Plus > 0 ? formatCurrency(age90Plus) : '-'}</td>
+
+                                                                    <td className="px-3 py-3 text-right font-mono font-black text-slate-800">{formatCurrency(r.remainingAmount)} <br /><span className="text-[8px] font-normal text-slate-400 font-sans">Total: {formatCurrency(r.amount)}</span></td>
+                                                                    <td className="px-3 py-3 text-center">
+                                                                        <div className="flex items-center justify-center gap-2">
+                                                                            <span className={cn("px-2 py-1 rounded-sm text-[9px] font-bold uppercase", r.status === 'PAID' || r.status === 'CLOSED' ? "bg-emerald-100 text-emerald-700" : r.status === 'PARTIAL' ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700")}>
+                                                                                {r.status}
+                                                                            </span>
+                                                                            {(r.status !== 'PAID' && r.status !== 'CLOSED') && (
+                                                                                <button
+                                                                                    onClick={() => { setSelectedApArId(r.id); setIsSettlementModalOpen(true); }}
+                                                                                    className="bg-slate-900 text-white p-1.5 rounded-sm hover:bg-slate-800 transition-all shadow-sm"
+                                                                                    title="Bayar / Cicil"
+                                                                                >
+                                                                                    <Banknote size={12} />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                                {payments.length > 0 && (
+                                                                    <tr>
+                                                                        <td colSpan={9} className="px-6 py-2 bg-slate-50/50">
+                                                                            <div className="pl-4 border-l-2 border-slate-200 py-1">
+                                                                                <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Histori Pembayaran ({payments.length})</p>
+                                                                                <div className="space-y-1">
+                                                                                    {payments.map(p => (
+                                                                                        <div key={p.id} className="text-[9px] flex items-center justify-between bg-white px-2 py-1 border border-slate-100 rounded-sm">
+                                                                                            <div className="flex items-center gap-3">
+                                                                                                <span className="font-bold text-slate-600">{new Date(p.date).toLocaleDateString('id-ID')}</span>
+                                                                                                <span className="text-slate-500">{accounts.find(a => a.id === p.paymentAccountId)?.name || 'Akun Tidak Ditemukan'}</span>
+                                                                                                <span className="text-slate-400 italic">Ref: {p.referenceNumber || '-'}</span>
+                                                                                            </div>
+                                                                                            <span className="font-mono font-bold text-slate-700">{formatCurrency(p.amount)}</span>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                )}
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
                                                 </tbody>
                                             </table>
                                         </div>
@@ -1609,6 +1691,50 @@ export default function Finance() {
                                 </div>
                             )}
 
+                            {activeTab === 'TRANSFER_KAS' && (
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-center">
+                                        <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight italic">Transfer Kas & Bank</h3>
+                                    </div>
+                                    <div className="bg-white border border-slate-200 shadow-sm p-6">
+                                        <form onSubmit={handleTransferKas} className="space-y-4 max-w-2xl">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Dari Akun</label>
+                                                    <select name="fromAccountId" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+                                                        <option value="">-- Pilih Akun Sumber --</option>
+                                                        {accounts.filter(a => a.isCashOrBank).map(a => <option key={a.id} value={a.id}>{a.code} - {a.name} ({formatCurrency(getAccountBalance(a.id).debit - getAccountBalance(a.id).credit)})</option>)}
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Ke Akun</label>
+                                                    <select name="toAccountId" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm focus:outline-none focus:border-amber-500">
+                                                        <option value="">-- Pilih Akun Tujuan --</option>
+                                                        {accounts.filter(a => a.isCashOrBank).map(a => <option key={a.id} value={a.id}>{a.code} - {a.name} ({formatCurrency(getAccountBalance(a.id).debit - getAccountBalance(a.id).credit)})</option>)}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Nominal (Rp)</label>
+                                                <input type="number" name="amount" min="1" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm focus:outline-none focus:border-amber-500 font-mono font-bold" />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Tanggal</label>
+                                                <input type="date" name="date" required defaultValue={new Date().toISOString().slice(0, 10)} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm focus:outline-none focus:border-amber-500" />
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">Keterangan / Berita Transfer</label>
+                                                <input type="text" name="notes" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-3 py-2 text-sm focus:outline-none focus:border-amber-500" placeholder="Cth: Pindah dana ke kas operasional kandang 2" />
+                                            </div>
+                                            <button disabled={isSaving} type="submit" className="w-full bg-slate-900 text-white font-black uppercase tracking-widest text-[10px] py-3 rounded-sm hover:bg-slate-800 disabled:opacity-50">
+                                                {isSaving ? 'Memproses...' : 'Proses Transfer'}
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            )}
+
+
                             {activeTab === 'NERACA_SALDO' && <NeracaSaldo />}
                         </div>
                     </div>
@@ -1706,9 +1832,9 @@ export default function Finance() {
                     <button type="submit" disabled={isSaving} className={cn(
                         "w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] transition-all",
                         isSaving ? "bg-slate-400 cursor-not-allowed" :
-                        assetOwnershipType === 'MILIK_PRIBADI'
-                            ? "bg-slate-800 text-white hover:bg-slate-700"
-                            : "bg-slate-900 text-white hover:bg-slate-800"
+                            assetOwnershipType === 'MILIK_PRIBADI'
+                                ? "bg-slate-800 text-white hover:bg-slate-700"
+                                : "bg-slate-900 text-white hover:bg-slate-800"
                     )}>
                         {isSaving ? "Memproses..." : editingAsset ? "Simpan Perubahan" : assetOwnershipType === 'MILIK_PRIBADI' ? "Daftarkan sebagai Milik Pribadi" : "Daftarkan Aset & Catat Pengeluaran"}
                     </button>
@@ -1741,7 +1867,9 @@ export default function Finance() {
                             ))}
                         </select>
                     </div>
-                    <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em]">Simpan Modal</button>
+                    <button type="submit" disabled={isSaving} className={cn("w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] transition-all", isSaving ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800")}>
+                        {isSaving ? "Memproses..." : "Simpan Modal"}
+                    </button>
                 </form>
             </Modal>
 
@@ -1767,7 +1895,9 @@ export default function Finance() {
                                     <input name="notes" type="text" placeholder="Detail perbaikan..." className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
                                 </div>
                             </div>
-                            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em]">Simpan Pembaruan</button>
+                            <button type="submit" disabled={isSaving} className={cn("w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.25em] transition-all", isSaving ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800")}>
+                                {isSaving ? "Memproses..." : "Simpan Pembaruan"}
+                            </button>
                         </form>
                         <div className="border-t border-slate-200 pt-6">
                             <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-4">Histori Perawatan</h5>
@@ -1796,6 +1926,8 @@ export default function Finance() {
             <Modal isOpen={isOpexModalOpen} onClose={() => setIsOpexModalOpen(false)} title="Tambah Pengeluaran Harian">
                 <form onSubmit={async (e) => {
                     e.preventDefault();
+                    if (isSaving) return;
+                    setIsSaving(true);
                     const fd = new FormData(e.target as HTMLFormElement);
                     try {
                         await addOperationalExpenseRecord({
@@ -1811,6 +1943,8 @@ export default function Finance() {
                         Swal.fire({ title: 'Berhasil!', text: 'Pengeluaran harian telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
                     } catch (err: any) {
                         Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+                    } finally {
+                        setIsSaving(false);
                     }
                 }} className="space-y-5">
                     <div className="grid grid-cols-2 gap-4">
@@ -1845,7 +1979,9 @@ export default function Finance() {
                             </select>
                         </div>
                     </div>
-                    <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800">Simpan & Jurnal Otomatis</button>
+                    <button type="submit" disabled={isSaving} className={cn("w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2", isSaving ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800")}>
+                        {isSaving ? "Memproses..." : "Simpan & Jurnal Otomatis"}
+                    </button>
                 </form>
             </Modal>
 
@@ -1857,6 +1993,8 @@ export default function Finance() {
                 </div>
                 <form onSubmit={async (e) => {
                     e.preventDefault();
+                    if (isSaving) return;
+                    setIsSaving(true);
                     const fd = new FormData(e.target as HTMLFormElement);
                     try {
                         await realizeSinkingFund(Number(fd.get('amount')), fd.get('type') as SinkingFundType, activeHouse?.id, fd.get('notes') as string);
@@ -1864,6 +2002,8 @@ export default function Finance() {
                         Swal.fire({ title: 'Berhasil!', text: 'Dana peremajaan telah dicatat dan dijurnal otomatis.', icon: 'success', confirmButtonColor: '#0f172a', timer: 2000, showConfirmButton: false });
                     } catch (err: any) {
                         Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+                    } finally {
+                        setIsSaving(false);
                     }
                 }} className="space-y-5">
                     <div>
@@ -1882,28 +2022,36 @@ export default function Finance() {
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Catatan / Keterangan</label>
                         <textarea name="notes" placeholder="Cth: Alokasi bulan Mei 2026 untuk DOC batch berikutnya" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 h-20" />
                     </div>
-                    <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 flex items-center justify-center gap-2">
-                        Simpan & Jurnal Otomatis
+                    <button type="submit" disabled={isSaving} className={cn("w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2", isSaving ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800")}>
+                        {isSaving ? "Memproses..." : "Simpan & Jurnal Otomatis"}
                     </button>
                 </form>
             </Modal>
 
             <Modal isOpen={isApArModalOpen} onClose={() => setIsApArModalOpen(false)} title="Tambah Tagihan Hutang / Piutang">
-                <form onSubmit={(e) => {
+                <form onSubmit={async (e) => {
                     e.preventDefault();
-                    const fd = new FormData(e.target as HTMLFormElement);
-                    addAPARRecord({
-                        type: fd.get('type') as 'HUTANG' | 'PIUTANG',
-                        entityName: fd.get('entityName') as string,
-                        description: fd.get('description') as string,
-                        amount: Number(fd.get('amount')),
-                        remainingAmount: Number(fd.get('amount')),
-                        dueDate: fd.get('dueDate') as string,
-                        status: 'OPEN',
-                        houseId: activeHouse?.id,
-                    });
-                    setIsApArModalOpen(false);
-                    Swal.fire({ title: 'Berhasil!', text: 'Tagihan berhasil ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a', timer: 1500, showConfirmButton: false });
+                    if (isSaving) return;
+                    setIsSaving(true);
+                    try {
+                        const fd = new FormData(e.target as HTMLFormElement);
+                        await addAPARRecord({
+                            type: fd.get('type') as 'HUTANG' | 'PIUTANG',
+                            entityName: fd.get('entityName') as string,
+                            description: fd.get('description') as string,
+                            amount: Number(fd.get('amount')),
+                            remainingAmount: Number(fd.get('amount')),
+                            dueDate: fd.get('dueDate') as string,
+                            status: 'OPEN',
+                            houseId: activeHouse?.id,
+                        });
+                        setIsApArModalOpen(false);
+                        Swal.fire({ title: 'Berhasil!', text: 'Tagihan berhasil ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a', timer: 1500, showConfirmButton: false });
+                    } catch (err: any) {
+                        Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+                    } finally {
+                        setIsSaving(false);
+                    }
                 }} className="space-y-5">
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -1930,8 +2078,8 @@ export default function Finance() {
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Keterangan</label>
                         <input name="description" type="text" placeholder="Cth: Pembelian 1 ton pakan ternak" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
                     </div>
-                    <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 flex items-center justify-center gap-2">
-                        <Plus size={14} /> Simpan Tagihan
+                    <button type="submit" disabled={isSaving} className={cn("w-full py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2", isSaving ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800")}>
+                        <Plus size={14} /> {isSaving ? "Memproses..." : "Simpan Tagihan"}
                     </button>
                 </form>
             </Modal>

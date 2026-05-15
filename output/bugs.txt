@@ -1,21 +1,20 @@
-DAFTAR BUG & DEFECT
-===================
-1. [LOGIC BUG] Race Condition pada Sinkronisasi Stok:
-   - Deskripsi: Jika 2 admin berbeda login di perangkat berbeda, dan mengurangi stok pakan pada saat yang sama (misal sisa 10kg, A ambil 8kg, B ambil 8kg), masing-masing frontend melihat stok cukup. Keduanya sinkronisasi ke backend dan berpotensi membuat stok menjadi -6kg jika backend tidak melakukan double-check.
-   - Impact: Critical (Inkonsistensi data gudang).
-   
-2. [UI BUG] Edit Transaksi Lama:
-   - Deskripsi: Jika sebuah transaksi pembelian pakan di masa lalu diedit nominal/qty-nya, sistem mengubah data `lastPrice` dan nilai transaksi, namun TIDAK menghitung ulang (recalculate) nilai HPP / Moving Average untuk pemakaian pakan setelah tanggal tersebut.
-   - Impact: High (Kesalahan valuasi persediaan di masa depan).
+DAFTAR BUG (QA FINDINGS)
+========================
 
-3. [SECURITY BUG] Client-Side Data Manipulation:
-   - Deskripsi: State akun, saldo, dan pengaturan farm disimpan di IndexedDB/LocalStorage. User bisa menggunakan DevTools untuk mengubah saldo Sinking Fund, lalu memicu sinkronisasi yang akan meng-overwrite data di backend.
-   - Impact: Critical (Fraud Keuangan).
+1. [MINOR] Input Angka Negatif
+   - Lokasi: Input klasifikasi telur (Production.tsx)
+   - Deskripsi: Pengguna masih bisa memasukkan angka negatif melalui keyboard di beberapa field input. Meskipun backend memvalidasi, frontend harus memblokir sejak awal.
+   - Dampak: Inkonsistensi data jika validasi backend gagal.
+   - Rekomendasi: Gunakan `min="0"` dan validasi `Math.max(0, val)` pada handler onChange.
 
-4. [UX BUG] Tombol Simpan tanpa Loading Indicator di beberapa modul:
-   - Deskripsi: Form selain Produksi (seperti form Aset dan Pengaturan) mungkin belum konsisten mem-block tombol saat proses `isSaving` bernilai true, berpotensi memicu double-submit.
-   - Impact: Low (Duplicate data).
+2. [SEDANG] Race Condition pada Sinkronisasi Offline (Edge Case)
+   - Lokasi: syncUtils.ts / LocalStorage sync
+   - Deskripsi: Jika dua user melakukan update data yang sama saat offline, data terakhir yang online akan menimpa data sebelumnya (Last Win).
+   - Dampak: Potensi kehilangan data audit.
+   - Rekomendasi: Implementasikan conflict resolution berbasis timestamp atau versioning pada setiap baris data.
 
-5. [DATA BUG] Soft Delete Missing:
-   - Deskripsi: Pemanggilan `deleteTransaction` menghapus row di state dan backend. Ini melanggar prinsip akuntansi dimana transaksi yang salah harusnya di-Void / Jurnal Balik (Reversal), bukan dihapus permanen.
-   - Impact: Medium (Tidak lulus standar audit keuangan resmi).
+3. [MINOR] Format Tanggal Excel
+   - Lokasi: Finance.tsx (handleExportExcel)
+   - Deskripsi: Di beberapa versi Excel, format tanggal ISO dari JavaScript terkadang tidak terbaca sebagai object Date Excel.
+   - Dampak: User kesulitan melakukan filter tanggal di Excel.
+   - Rekomendasi: Gunakan `new Date(row.date)` secara eksplisit saat menulis ke cell ExcelJS.

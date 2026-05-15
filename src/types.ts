@@ -109,13 +109,16 @@ export enum PaymentStatus {
   PIUTANG = 'PIUTANG'
 }
 
-// Payment history for AP/AR records
-export interface PaymentHistoryEntry {
+// Relational Payment History
+export interface APARPayment {
   id: string;
+  aparRecordId: string;
   date: string;
   amount: number;
-  accountId: string; // which account was used to pay
+  accountId: string; // kas/bank
+  reference: string;
   notes?: string;
+  createdBy?: string;
 }
 
 export interface APARRecord {
@@ -127,13 +130,33 @@ export interface APARRecord {
   remainingAmount: number;
   dueDate: string;
   createdAt: string;
-  status: 'OPEN' | 'PARTIAL' | 'CLOSED';
+  status: 'OPEN' | 'PARTIAL' | 'CLOSED' | 'OVERDUE' | 'CANCELLED' | 'WRITE_OFF';
   relatedTransactionId?: string;
   houseId?: string; // Tagging per house
-  paymentHistory: PaymentHistoryEntry[];
   isInterHouse?: boolean;      // NEW: For inter-house debt
   fromHouseId?: string;
   toHouseId?: string;
+}
+
+export interface CostAllocation {
+  id: string;
+  date: string;
+  description: string;
+  totalAmount: number;
+  metric: 'POPULATION' | 'FEED_CONSUMPTION' | 'EGG_PRODUCTION' | 'AREA' | 'MANUAL';
+  allocations: Record<string, number>; // houseId -> amount
+  journalId?: string;
+}
+
+export interface BankReconciliation {
+  id: string;
+  accountId: string;
+  date: string;
+  systemBalance: number;
+  bankBalance: number;
+  difference: number;
+  status: 'DRAFT' | 'COMPLETED';
+  notes?: string;
 }
 
 // Operational Expense (non-inventory daily expenses)
@@ -215,6 +238,12 @@ export enum ItemType {
   OTHER = 'OTHER'
 }
 
+export enum ItemCategory {
+  INVENTORY = 'INVENTORY',
+  EXPENSE = 'EXPENSE',
+  ASSET = 'ASSET'
+}
+
 export interface User {
   id: string;
   name: string;
@@ -248,6 +277,7 @@ export interface InventoryItem {
   houseId?: string;              // optional – some items are farm-wide. If empty or 'CENTRAL', it's in Central Warehouse.
   name: string;
   type: ItemType;
+  itemCategory?: ItemCategory;   // NEW: Classification for accounting routing
   quantity: number;
   unit: string;
   reorderPoint: number;

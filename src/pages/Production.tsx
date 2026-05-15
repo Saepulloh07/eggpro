@@ -61,7 +61,7 @@ export default function Production() {
   const [isSaving, setIsSaving] = useState(false);
 
   const handleBreakdownChange = (cat: string, val: number) =>
-    setBreakdown(prev => ({ ...prev, [cat]: val }));
+    setBreakdown(prev => ({ ...prev, [cat]: Math.max(0, val) }));
 
   const totalBreakdownButir = useMemo(() =>
     Object.values(breakdown).reduce((a: number, b: unknown) => a + (b as number), 0), [breakdown]);
@@ -395,7 +395,7 @@ export default function Production() {
 
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-sm">
               <label className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 block mb-2">Berat Timbangan Riel (kg)</label>
-              <input type="number" step="0.01" placeholder={eggWeight.toFixed(2)} value={actualEggWeight || ''} onChange={e => setActualEggWeight(Number(e.target.value))}
+              <input type="number" min="0" step="0.01" placeholder={eggWeight.toFixed(2)} value={actualEggWeight || ''} onChange={e => setActualEggWeight(Math.max(0, Number(e.target.value)))}
                 className="w-full bg-white border border-emerald-300 rounded-sm px-4 py-3 text-sm font-black text-emerald-900 focus:outline-none focus:border-emerald-500" />
               <p className="text-[9px] text-emerald-600 mt-2 leading-relaxed italic">Biarkan kosong untuk menggunakan estimasi otomatis ({eggWeight.toFixed(2)} kg).</p>
             </div>
@@ -421,7 +421,7 @@ export default function Production() {
 
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Pakan Konsumsi (kg)</label>
-              <input type="number" placeholder="0.00" step="0.01" value={feedConsumed || ''} onChange={e => setFeedConsumed(Number(e.target.value))}
+              <input type="number" min="0" placeholder="0.00" step="0.01" value={feedConsumed || ''} onChange={e => setFeedConsumed(Math.max(0, Number(e.target.value)))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
             </div>
 
@@ -429,7 +429,7 @@ export default function Production() {
 
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Telur Afkir/Dibuang</label>
-              <input type="number" placeholder="0" value={discardedEggs || ''} onChange={e => setDiscardedEggs(Number(e.target.value))}
+              <input type="number" min="0" placeholder="0" value={discardedEggs || ''} onChange={e => setDiscardedEggs(Math.max(0, Number(e.target.value)))}
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
             </div>
           </div>
@@ -473,12 +473,12 @@ export default function Production() {
                     <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">{cat}</span>
                   </div>
                   <div className="relative">
-                    <input
-                      type="number" placeholder="0" step="1"
-                      value={breakdown[cat] || ''}
-                      onChange={e => handleBreakdownChange(cat, Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-sm pl-4 pr-12 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
-                    />
+                      <input
+                        type="number" min="0" placeholder="0" step="1"
+                        value={breakdown[cat] || ''}
+                        onChange={e => handleBreakdownChange(cat, Number(e.target.value))}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-sm pl-4 pr-12 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                      />
                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">butir</span>
                   </div>
                 </div>

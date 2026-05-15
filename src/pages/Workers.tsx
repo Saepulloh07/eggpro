@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Users as UsersIcon,
     Plus,
@@ -26,13 +26,14 @@ import { generateSalarySlip } from '../lib/pdfGenerator';
 
 export default function Workers() {
     const { user: currentUser, users, addUser, updateUser } = useApp();
-    const { addTransaction, addJournalEntry, accounts } = useGlobalData();
+    const { addTransaction, addJournalEntry, accounts, getAccountBalance } = useGlobalData();
     const { houses } = useHouse(); // Corrected hook
 
 
     const [isWorkerModalOpen, setIsWorkerModalOpen] = useState(false);
     const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
     const [selectedWorker, setSelectedWorker] = useState<User | null>(null);
+    const [selectedAccountId, setSelectedAccountId] = useState<string>('');
     const [salaryItems, setSalaryItems] = useState<{ id: string, label: string, amount: number, type: 'ADDITION' | 'DEDUCTION' }[]>([]);
 
     const handleAddWorker = (e: React.FormEvent) => {
@@ -82,10 +83,28 @@ export default function Workers() {
         setIsSalaryModalOpen(false);
     };
 
-    const [selectedHouseId, setSelectedHouseId] = useState<string>('CENTRAL');
+    const [selectedHouseId, setSelectedHouseId] = useState<string>('');
+
+    // Set default house and account when modal opens or houses load
+    useEffect(() => {
+        if (isSalaryModalOpen && !selectedHouseId && houses.length > 0) {
+            setSelectedHouseId(houses[0].id);
+        }
+    }, [isSalaryModalOpen, houses, selectedHouseId]);
+
+    useEffect(() => {
+        if (selectedHouseId) {
+            const houseKas = accounts.find(a => a.isCashOrBank && (a.houseId === selectedHouseId || a.id === `acc-kas-${selectedHouseId}`));
+            if (houseKas) setSelectedAccountId(houseKas.id);
+            else setSelectedAccountId('');
+        }
+    }, [selectedHouseId, accounts]);
 
     const handleDownloadSlip = async () => {
-        if (!selectedWorker) return;
+        if (!selectedWorker || !selectedHouseId || !selectedAccountId) {
+            Swal.fire('Peringatan', 'Mohon pilih kandang dan sumber dana yang akan dibebankan.', 'warning');
+            return;
+        }
 
         const baseSalary = selectedWorker.salary || 0;
         const mappedItems = salaryItems.map(item => ({
@@ -103,7 +122,7 @@ export default function Workers() {
                 { date: new Date().toISOString().split('T')[0], description: `Gaji: ${selectedWorker.name}`, reference: `PAY-${Date.now()}` },
                 [
                     { accountId: 'acc-beban-gaji', debit: total, credit: 0, houseId: selectedHouseId },
-                    { accountId: 'acc-kas', debit: 0, credit: total, houseId: selectedHouseId }
+                    { accountId: selectedAccountId, debit: 0, credit: total, houseId: selectedHouseId }
                 ]
             );
 
@@ -114,7 +133,7 @@ export default function Workers() {
                 qty: '1 Org',
                 price: total,
                 total: total,
-                account: 'Kas',
+                account: accounts.find(a => a.id === selectedAccountId)?.name || 'Kas',
                 type: 'EXPENSE',
                 category: 'Payroll',
                 journalId
@@ -300,10 +319,26 @@ export default function Workers() {
                                     value={selectedHouseId}
                                     onChange={(e) => setSelectedHouseId(e.target.value)}
                                     className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                                    required
                                 >
+                                    <option value="" disabled>-- Pilih Kandang --</option>
                                     <option value="CENTRAL">Pusat / Shared</option>
                                     {houses.map(h => (
                                         <option key={h.id} value={h.id}>{h.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="col-span-2 sm:col-span-1">
+                                <label className="text-[9px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Sumber Dana (Kas/Bank)</label>
+                                <select
+                                    value={selectedAccountId}
+                                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                                    required
+                                >
+                                    <option value="" disabled>-- Pilih Kas/Bank --</option>
+                                    {accounts.filter(a => a.isCashOrBank && (a.houseId === selectedHouseId || a.id === `acc-kas-${selectedHouseId}` || (selectedHouseId === 'CENTRAL' && !a.houseId))).map(a => (
+                                        <option key={a.id} value={a.id}>{a.name} ({formatCurrency(getAccountBalance(a.id).debit - getAccountBalance(a.id).credit)})</option>
                                     ))}
                                 </select>
                             </div>

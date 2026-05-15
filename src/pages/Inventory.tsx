@@ -152,10 +152,17 @@ export default function Inventory() {
           }
 
 
+          let targetAssetAccountId = 'acc-persediaan-pakan';
+          if (newItem.type === ItemType.MEDICINE || newItem.type === ItemType.VACCINE) {
+            targetAssetAccountId = 'acc-persediaan-obat';
+          } else if (newItem.type === ItemType.OTHER) {
+            targetAssetAccountId = 'acc-peralatan';
+          }
+
           const journalId = await addJournalEntry(
             { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang: ${newItem.name}`, reference: `BELI-${Date.now()}` },
             [
-              { accountId: 'acc-persediaan-pakan', debit: totalCost, credit: 0, houseId: payingHouseId },
+              { accountId: targetAssetAccountId, debit: totalCost, credit: 0, houseId: payingHouseId },
               { accountId: finalAcc.id, debit: 0, credit: totalCost, houseId: payingHouseId }
             ]
           );
@@ -295,9 +302,10 @@ export default function Inventory() {
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jumlah</label>
               <input
                 type="number"
+                min="0"
                 placeholder="0"
                 value={newItem.quantity || ''}
-                onChange={(e) => setNewItem({ ...newItem, quantity: Number(e.target.value) })}
+                onChange={(e) => setNewItem({ ...newItem, quantity: Math.max(0, Number(e.target.value)) })}
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 transition-all font-mono"
               />
             </div>
@@ -331,9 +339,10 @@ export default function Inventory() {
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Harga Satuan (Est.)</label>
               <input
                 type="number"
+                min="0"
                 placeholder="0"
                 value={newItem.price || ''}
-                onChange={(e) => setNewItem({ ...newItem, price: Number(e.target.value) })}
+                onChange={(e) => setNewItem({ ...newItem, price: Math.max(0, Number(e.target.value)) })}
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 transition-all font-mono"
               />
             </div>
