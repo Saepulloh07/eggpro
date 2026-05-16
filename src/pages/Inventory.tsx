@@ -75,7 +75,7 @@ export default function Inventory() {
     OTHER: 'Lainnya',
   };
 
-  const getHouseInventory = () => inventory.filter(i => i.houseId === 'CENTRAL' || !i.houseId || i.houseId === activeHouse?.id);
+  const getHouseInventory = () => inventory.filter(i => i.houseId === activeHouse?.id);
 
   const eggStockItems = getHouseInventory().filter(i => i.type === ItemType.EGG_STOCK);
   const nonEggItems = getHouseInventory().filter(i => i.type !== ItemType.EGG_STOCK);
@@ -114,9 +114,8 @@ export default function Inventory() {
           const finalAcc = accounts.find(a => a.id === accId) || accounts.find(a => a.isCashOrBank) || accounts[0];
           const payingHouseId = paidByHouseId || activeHouse?.id || '';
 
-          // ENFORCE: All purchases go to CENTRAL WAREHOUSE
-          const targetHouseId = 'CENTRAL';
-          const targetItem = inventory.find(i => i.name.toLowerCase() === newItem.name.toLowerCase() && i.type !== ItemType.EGG_STOCK && (!i.houseId || i.houseId === 'CENTRAL'));
+          const targetHouseId = payingHouseId;
+          const targetItem = inventory.find(i => i.name.toLowerCase() === newItem.name.toLowerCase() && i.type !== ItemType.EGG_STOCK && i.houseId === targetHouseId);
           let finalItemId = '';
           if (targetItem) {
             finalItemId = targetItem.id;
@@ -187,7 +186,7 @@ export default function Inventory() {
             quantity: newItem.quantity,
             unitCost: newItem.price,
             sourceLocation: 'SUPPLIER',
-            targetLocation: 'CENTRAL',
+            targetLocation: payingHouseId,
             paidByHouseId: payingHouseId,
             reference: `BELI-${Date.now()}`,
             notes: `Dibayar oleh Kandang — ${finalAcc.name}`
@@ -246,7 +245,7 @@ export default function Inventory() {
         type: StockMutationType.TRANSFER,
         quantity: transferData.quantity,
         unitCost: sourceItem.lastPrice,
-        sourceLocation: 'CENTRAL',
+        sourceLocation: activeHouse?.id || '',
         targetLocation: transferData.targetHouseId,
         reference: `TRF-${Date.now()}`,
         notes: `Distribusi ke Kandang`
@@ -416,7 +415,7 @@ export default function Inventory() {
               required
             >
               <option value="">Pilih Item...</option>
-              {inventory.filter(i => (i.houseId === 'CENTRAL' || !i.houseId) && i.type !== ItemType.EGG_STOCK).map(i => (
+              {inventory.filter(i => i.houseId === activeHouse?.id && i.type !== ItemType.EGG_STOCK).map(i => (
                 <option key={i.id} value={i.id}>{i.name} (Stok: {i.quantity} {i.unit})</option>
               ))}
             </select>

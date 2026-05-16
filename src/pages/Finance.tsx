@@ -2057,8 +2057,8 @@ export default function Finance() {
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jenis</label>
                             <select name="type" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
-                                <option value="HUTANG">HUTANG (AP) — Kita berhutang</option>
-                                <option value="PIUTANG">PIUTANG (AR) — Orang berhutang ke kita</option>
+                                <option value="HUTANG">HUTANG (AP)</option>
+                                <option value="PIUTANG">PIUTANG (AR)</option>
                             </select>
                         </div>
                         <div>

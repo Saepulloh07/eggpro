@@ -46,7 +46,7 @@ export default function FeedFormulation() {
                 unit: 'kg',
                 reorderPoint: 500,
                 lastPrice: 0,
-                houseId: 'CENTRAL'
+                houseId: activeHouse?.id || ''
             });
         } else {
             // Always ensure an output item is selected
@@ -59,7 +59,7 @@ export default function FeedFormulation() {
 
     // Finished feed items from central warehouse (Gudang Pusat)
     const finishedFeedItems = useMemo(() =>
-        inventory.filter(i => i.type === ItemType.FINISHED_FEED && (!i.houseId || i.houseId === 'CENTRAL')), [inventory]);
+        inventory.filter(i => i.type === ItemType.FINISHED_FEED && i.houseId === activeHouse?.id), [inventory, activeHouse]);
 
     // Raw materials only for ingredient dropdown (Exclude Finished Feed)
     const rawMaterialItems = useMemo(() =>
@@ -145,7 +145,7 @@ export default function FeedFormulation() {
                         type: StockMutationType.USAGE,
                         quantity: detail.neededKg,
                         unitCost: 0,
-                        sourceLocation: 'CENTRAL',
+                        sourceLocation: activeHouse?.id || '',
                         reference: `MILLING-USAGE-${Date.now()}`,
                         notes: `Bahan untuk Giling: ${activeRecipe?.name}`
                     });
@@ -170,7 +170,7 @@ export default function FeedFormulation() {
                         type: StockMutationType.PRODUCTION,
                         quantity: targetProductionKg,
                         unitCost: unitCost,
-                        sourceLocation: 'CENTRAL',
+                        sourceLocation: activeHouse?.id || '',
                         reference: `MILLING-${Date.now()}`,
                         notes: `Hasil Giling: ${activeRecipe?.name}`
                     });

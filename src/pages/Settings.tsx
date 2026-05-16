@@ -1236,7 +1236,8 @@ export default function Settings() {
                                         onClick={async () => {
                                             Swal.fire({ title: 'Menyiapkan JSON...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
                                             try {
-                                                const res = await fetch('/api/sync/all/export-json');
+                                                const apiUrl = import.meta.env.VITE_API_URL || '';
+                                                const res = await fetch(`${apiUrl}/api/sync/all/export-json`);
                                                 if (!res.ok) throw new Error('Export failed');
                                                 const data = await res.json();
 

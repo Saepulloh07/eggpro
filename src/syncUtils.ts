@@ -61,7 +61,8 @@ export const syncRecord = async (key: string, record: any) => {
 
   // 2. Sync individual record to backend
   try {
-    const res = await fetch(`/api/sync/${key}/record`, {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/sync/${key}/record`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(record)
@@ -90,7 +91,8 @@ export const deleteRecord = async (key: string, id: string) => {
 
   // 2. Sync deletion to backend
   try {
-    const res = await fetch(`/api/sync/${key}/${id}`, {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/sync/${key}/${id}`, {
       method: 'DELETE'
     });
     if (!res.ok) throw new Error('Server error');
@@ -118,7 +120,8 @@ export const syncToDb = async (key: string, data: any) => {
   await localforage.setItem(key, encrypted);
   
   try {
-    const res = await fetch(`/api/sync/${key}`, {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/sync/${key}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cleanData)
@@ -157,7 +160,8 @@ export const processSyncQueue = async () => {
             }
           }
 
-          const res = await fetch(`/api/sync/${key}`, {
+          const apiUrl = import.meta.env.VITE_API_URL || '';
+          const res = await fetch(`${apiUrl}/api/sync/${key}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(decryptedData)
@@ -183,7 +187,8 @@ if (typeof window !== 'undefined') {
 export const loadFromDbOrIndexedDB = async (key: string, setter: (val: any) => void) => {
   try {
     // 1. Try to load from Backend
-    const res = await fetch(`/api/sync/${key}`);
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/sync/${key}`);
     if (res.ok) {
       let data = await res.json();
       // Robust cleaning: Unstringify as many times as needed
@@ -221,7 +226,8 @@ export const loadFromDbOrIndexedDB = async (key: string, setter: (val: any) => v
 export const resetAllData = async () => {
   try {
     // 1. Reset Backend
-    const res = await fetch('/api/sync/all/reset', { method: 'DELETE' });
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/sync/all/reset`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to reset backend');
     
     // 2. Reset LocalForage

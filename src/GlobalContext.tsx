@@ -316,22 +316,25 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateAPARRecord = async (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => {
     let affectedRecord: APARRecord | undefined;
+    let updatedRecord: APARRecord | undefined;
 
     setApArRecords(prev => prev.map(r => {
       if (r.id === id) {
         affectedRecord = r;
         const newRemaining = Math.max(0, r.remainingAmount - paymentAmount);
         const newStatus = newRemaining === 0 ? 'CLOSED' : 'PARTIAL';
-        return {
+        updatedRecord = {
           ...r,
           remainingAmount: newRemaining,
           status: newStatus,
         };
+        syncRecord('poultry_apar', updatedRecord);
+        return updatedRecord;
       }
       return r;
     }));
 
-    if (affectedRecord) {
+    if (affectedRecord && updatedRecord) {
       const paymentEntry: APARPayment = {
         id: `pay-${generateUUID()}`,
         aparRecordId: id,
@@ -351,8 +354,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // If HUTANG: Debit Payable (acc-hutang-pakan / acc-hutang-doc), Credit Cash
       // If PIUTANG: Debit Cash, Credit Receivable (acc-piutang-telur)
       const isHutang = r.type === 'HUTANG';
-      const payableAccountId = r.description.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' :
-        r.description.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
+      const payableAccountId = r.description?.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' :
+        r.description?.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
       const receivableAccountId = 'acc-piutang-telur';
 
       const journalId = addJournalEntry({
@@ -493,7 +496,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (checkLockAndSwal(txData.date)) return '';
     try {
       const isInventoryPurchase = txData.type === 'EXPENSE' && (txData.category === 'Persediaan' || txData.category === 'Pakan' || txData.category === 'Obat');
-      const res = await fetch('/api/transaction/expense', {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${apiUrl}/api/transaction/expense`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txData, isInventoryPurchase })
@@ -514,7 +518,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (checkLockAndSwal(tx.date)) return;
 
     try {
-      const res = await fetch(`/api/transaction/cancel/${id}`, { method: 'POST' });
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${apiUrl}/api/transaction/cancel/${id}`, { method: 'POST' });
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
       await refreshData();
@@ -542,7 +547,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const saveProduction = async (logData: Omit<ProductionLog, 'id'>) => {
     if (checkLockAndSwal(logData.date)) return;
     try {
-      const res = await fetch('/api/transaction/production', {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${apiUrl}/api/transaction/production`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...logData, inputBy: 'System' })

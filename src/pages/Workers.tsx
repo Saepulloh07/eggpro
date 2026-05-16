@@ -285,6 +285,7 @@ export default function Workers() {
                             <select name="role" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
                                 <option value={UserRole.WORKER}>PENGAWAS</option>
                                 <option value={UserRole.ADMIN}>ADMIN GUDANG</option>
+                                <option value={UserRole.WORKER}>(WORKER) ANAK KANDANG</option>
                             </select>
                         </div>
                         <div>
@@ -322,7 +323,7 @@ export default function Workers() {
                                     required
                                 >
                                     <option value="" disabled>-- Pilih Kandang --</option>
-                                    <option value="CENTRAL">Pusat / Shared</option>
+
                                     {houses.map(h => (
                                         <option key={h.id} value={h.id}>{h.name}</option>
                                     ))}
@@ -337,7 +338,7 @@ export default function Workers() {
                                     required
                                 >
                                     <option value="" disabled>-- Pilih Kas/Bank --</option>
-                                    {accounts.filter(a => a.isCashOrBank && (a.houseId === selectedHouseId || a.id === `acc-kas-${selectedHouseId}` || (selectedHouseId === 'CENTRAL' && !a.houseId))).map(a => (
+                                    {accounts.filter(a => a.isCashOrBank && (a.houseId === selectedHouseId || a.id === `acc-kas-${selectedHouseId}`)).map(a => (
                                         <option key={a.id} value={a.id}>{a.name} ({formatCurrency(getAccountBalance(a.id).debit - getAccountBalance(a.id).credit)})</option>
                                     ))}
                                 </select>

@@ -56,7 +56,8 @@ export const HouseProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Auto-create Kas Kandang account in backend
     try {
-      const res = await fetch('/api/admin/create-house-kas', {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${apiUrl}/api/admin/create-house-kas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ houseId: newHouse.id, houseName: name })

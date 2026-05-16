@@ -88,10 +88,10 @@ export interface StockMutation {
   quantity: number;
   unitCost: number;
   totalCost: number;
-  sourceLocation: 'CENTRAL' | string;
-  targetLocation?: 'CENTRAL' | string;
-  paidByHouseId?: 'CENTRAL' | string; // NEW: Siapa yang bayar
-  usedByHouseId?: 'CENTRAL' | string; // NEW: Siapa yang pakai
+  sourceLocation: string;
+  targetLocation?: string;
+  paidByHouseId?: string; // Siapa yang bayar
+  usedByHouseId?: string; // Siapa yang pakai
   reference: string;
   notes?: string;
 }
@@ -274,7 +274,7 @@ export interface DailyProduction {
 
 export interface InventoryItem {
   id: string;
-  houseId?: string;              // optional – some items are farm-wide. If empty or 'CENTRAL', it's in Central Warehouse.
+  houseId: string;               // Required - all items must belong to a specific house.
   name: string;
   type: ItemType;
   itemCategory?: ItemCategory;   // NEW: Classification for accounting routing
@@ -288,7 +288,7 @@ export interface InventoryItem {
 
 export interface Sale {
   id: string;
-  houseId: string; // can be 'CENTRAL' for non-core
+  houseId: string;
   date: string;
   category: EggCategory | 'NON_EGG' | 'NON_CORE';
   quantity: number;
