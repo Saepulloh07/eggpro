@@ -37,6 +37,7 @@ export default function Sales() {
   const [customerName, setCustomerName] = useState('');
   const [buyerType, setBuyerType] = useState('REGULAR');
   const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
 
   // Load master prices from FarmSettings
@@ -64,7 +65,7 @@ export default function Sales() {
         const d = new Date(log.date);
         return log.houseId === activeHouse?.id && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
       })
-      .reduce((sum, log) => sum + (log.totalButir || 0), 0);
+      .reduce((sum, log) => sum + (log.totalButir ?? (log as any).totalKg ?? 0), 0);
 
     const monthlyFree = salesLogs
       .filter(sale => {
@@ -132,23 +133,30 @@ export default function Sales() {
       customClass: {
         cancelButton: 'text-slate-600'
       }
-    }).then((result) => {
+    }).then(async (result) => {
       if (result.isConfirmed) {
-        saveSale({
-            houseId: activeHouse?.id || '',
-            date: new Date().toISOString().split('T')[0],
-            category: activeCategory,
-            quantity,
-            price: currentPrice,
-            total: totalPrice,
-            isFree,
-            customer: customerName.trim() || 'Umum'
-        }, selectedAccountId);
+        setIsSaving(true);
+        try {
+          await saveSale({
+              houseId: activeHouse?.id || '',
+              date: new Date().toISOString().split('T')[0],
+              category: activeCategory,
+              quantity,
+              price: currentPrice,
+              total: totalPrice,
+              isFree,
+              customer: customerName.trim() || 'Umum'
+          }, selectedAccountId);
 
-        Swal.fire({ title: 'Transaksi Berhasil!', text: `Penjualan ${quantity.toLocaleString()} butir ${activeCategory} berhasil dicatat.`, icon: 'success', confirmButtonColor: '#0f172a' });
-        setQuantity(0);
-        setIsFree(false);
-        setCustomerName('');
+          Swal.fire({ title: 'Transaksi Berhasil!', text: `Penjualan ${quantity.toLocaleString()} butir ${activeCategory} berhasil dicatat.`, icon: 'success', confirmButtonColor: '#0f172a' });
+          setQuantity(0);
+          setIsFree(false);
+          setCustomerName('');
+        } catch (err: any) {
+          Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+        } finally {
+          setIsSaving(false);
+        }
       }
     });
   };
@@ -329,16 +337,16 @@ export default function Sales() {
 
                 <button
                   onClick={handleCompleteTransaction}
-                  disabled={isOverStock}
+                  disabled={isOverStock || isSaving}
                   className={cn(
                     "w-full rounded-sm py-5 font-bold text-[10px] uppercase tracking-[0.25em] shadow-xl active:scale-[0.98] transition-all flex items-center justify-center space-x-2 border group",
-                    isOverStock
+                    (isOverStock || isSaving)
                       ? "bg-slate-200 text-slate-400 border-slate-200 cursor-not-allowed"
                       : "bg-slate-900 text-white border-slate-800 hover:bg-slate-800"
                   )}
                 >
-                  <Plus size={16} className={cn("transition-colors", !isOverStock && "group-hover:text-amber-500")} />
-                  <span>{isOverStock ? 'Stok Tidak Mencukupi' : 'Selesaikan Transaksi'}</span>
+                  <Plus size={16} className={cn("transition-colors", !isOverStock && "group-hover:text-amber-500", isSaving && "animate-pulse")} />
+                  <span>{isSaving ? 'Memproses...' : isOverStock ? 'Stok Tidak Mencukupi' : 'Selesaikan Transaksi'}</span>
                 </button>
               </div>
             </div>

@@ -1,0 +1,44 @@
+================================================================================
+DAFTAR TEMUAN BUG - POULTRYMIND ERP
+================================================================================
+
+[BUG-001] [CRITICAL] Duplikasi Logika Jatah Telur Pekerja
+--------------------------------------------------------------------------------
+Lokasi: App.tsx:62 (Frontend) DAN backend/transaction.ts:108 (Backend)
+Deskripsi: 
+Frontend melakukan pengurangan stok telur setiap hari saat aplikasi dibuka (berdasarkan localStorage). 
+Backend melakukan pengurangan stok telur SETIAP KALI log produksi disimpan.
+Dampak: Stok telur akan berkurang jauh lebih banyak dari yang seharusnya. Jika ada 5 kandang menginput produksi, backend akan memotong jatah 5 kali. Ditambah lagi pemotongan dari frontend.
+Rekomendasi: Hapus logika di App.tsx dan perbaiki logika backend agar hanya memotong jatah telur sekali sehari per house (gunakan tabel log tersendiri atau flag pada production_log).
+
+[BUG-002] [HIGH] Inkonsistensi Rumus FCR pada Tabel History
+--------------------------------------------------------------------------------
+Lokasi: Production.tsx:302
+Deskripsi: Tabel riil-time production menggunakan rumus feedConsumed / totalButir (FCR per butir), sedangkan Dashboard dan Analytics menggunakan kg/kg.
+Dampak: User akan melihat angka FCR yang sangat kecil (misal 0.11) di tabel history, namun melihat angka 2.1 di Dashboard. Ini membingungkan dan bisa menyebabkan kesalahan keputusan manajemen pakan.
+Rekomendasi: Ubah rumus di Production.tsx:302 agar menggunakan estimasi massa telur (kg) atau input berat riil.
+
+[BUG-003] [MEDIUM] Race Condition pada Update Stok (Frontend)
+--------------------------------------------------------------------------------
+Lokasi: GlobalContext.tsx:246 (updateInventory)
+Deskripsi: Fungsi updateInventory di frontend hanya mengandalkan state lokal yang kemudian di-sync. Jika dua user melakukan update hampir bersamaan secara offline-first, data bisa tertimpa.
+Dampak: Selisih stok antara fisik dan sistem.
+Rekomendasi: Selalu gunakan endpoint backend (seperti /api/transaction/production) yang menggunakan transaksi database dan row-locking (FOR UPDATE) untuk operasi kritikal stok.
+
+[BUG-004] [MEDIUM] Perhitungan Laba Rugi Akumulasi vs Periode
+--------------------------------------------------------------------------------
+Lokasi: Finance.tsx:135 (totalDepreciation)
+Deskripsi: totalDepreciation menghitung penyusutan SEJAK TANGGAL BELI aset sampai hari ini. Jika aset sudah berumur 2 tahun, maka P&L hari ini akan terbebani penyusutan 2 tahun sekaligus.
+Dampak: Laba periode berjalan terlihat sangat rendah (atau rugi besar) karena terbebani penyusutan tahun-tahun sebelumnya.
+Rekomendasi: Laporan Laba Rugi harus difilter berdasarkan rentang tanggal, dan penyusutan yang dihitung hanya proporsional terhadap rentang tanggal tersebut.
+
+[BUG-005] [LOW] Validasi Input Harga Negatif
+--------------------------------------------------------------------------------
+Lokasi: Berbagai modal input (Finance, Inventory)
+Deskripsi: Beberapa field input angka belum secara ketat memblokir nilai negatif di tingkat backend (hanya mengandalkan frontend).
+Dampak: User bisa memasukkan harga negatif yang merusak total saldo buku besar.
+Rekomendasi: Tambahkan validasi Math.max(0, value) di controller backend sebelum query INSERT/UPDATE.
+
+================================================================================
+TOTAL TEMUAN: 1 CRITICAL, 1 HIGH, 2 MEDIUM, 1 LOW
+================================================================================

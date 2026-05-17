@@ -298,8 +298,9 @@ export default function Production() {
                     const hdp = activeBatch && activeBatch.currentCount > 0
                       ? ((log.eggCount / activeBatch.currentCount) * 100).toFixed(1)
                       : '-';
-                    const logTotalButir = log.totalButir ?? (log as any).totalKg ?? 0;
-                    const fcr = logTotalButir > 0 ? (log.feedConsumed / logTotalButir).toFixed(2) : '-';
+                    const logTotalButir = log.totalButir ?? 0;
+                    const logEggWeight = log.eggWeight || (logTotalButir * 0.0625);
+                    const fcr = logEggWeight > 0 ? (log.feedConsumed / logEggWeight).toFixed(2) : '-';
                     return (
                       <tr key={log.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                         <td className="px-3 py-3 font-bold whitespace-nowrap">{new Date(log.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>

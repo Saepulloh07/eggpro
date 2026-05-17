@@ -25,6 +25,7 @@ import Swal from 'sweetalert2';
 
 import { useHouse } from '../HouseContext';
 import { useGlobalData } from '../GlobalContext';
+import { useFlock } from '../FlockContext';
 import { ItemType, StockMutationType } from '../types';
 
 const ITEM_TYPE_LABELS: Record<string, string> = {
@@ -40,6 +41,7 @@ import { generateUUID } from '../lib/uuid';
 
 export default function Inventory() {
   const { activeHouse, houses } = useHouse();
+  const { getActiveFlockByHouse } = useFlock();
   const { inventory, updateInventory, updateInventoryItem, addInventoryItem, createStockMutation, addJournalEntry, addTransaction, addAPARRecord, transactions, productionLogs, farmSettings, accounts, getHouseCashBalance, createInterHouseDebt } = useGlobalData();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -678,7 +680,12 @@ export default function Inventory() {
               <div>
                 <div className="flex justify-between items-baseline mb-2">
                   <p className="text-3xl font-black italic tracking-tighter">
-                    {productionLogs.length > 0 ? (productionLogs[productionLogs.length - 1].feedConsumed / 10).toFixed(1) : 0}g
+                    {(() => {
+                      const lastLog = productionLogs[productionLogs.length - 1];
+                      const activeBatch = getActiveFlockByHouse(activeHouse?.id || '');
+                      const count = activeBatch?.currentCount || 1;
+                      return lastLog ? ((lastLog.feedConsumed * 1000) / count).toFixed(1) : 0;
+                    })()}g
                   </p>
                   <span className="text-[10px] font-bold text-emerald-500">OPTIMAL</span>
                 </div>
@@ -696,8 +703,8 @@ export default function Inventory() {
                   {(() => {
                     const houseLogs = productionLogs.filter(p => p.houseId === activeHouse?.id);
                     const totalFeed = houseLogs.reduce((a, b) => a + b.feedConsumed, 0);
-                    const totalEggs = houseLogs.reduce((a, b) => a + (b.totalButir ?? (b as any).totalKg ?? 0), 0);
-                    return totalEggs > 0 ? (totalFeed / totalEggs).toFixed(2) : '0.00';
+                    const totalKg = houseLogs.reduce((a, b) => a + (b.eggWeight || (b.eggCount * 0.0625)), 0);
+                    return totalKg > 0 ? (totalFeed / totalKg).toFixed(2) : '0.00';
                   })()}
                 </p>
                 <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">FCR (Feed Conversion Ratio)</p>

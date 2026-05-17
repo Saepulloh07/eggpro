@@ -20,11 +20,10 @@ export enum EggCategory {
   PECAH = 'Pecah',
 }
 
-// NEW: Cause of death for mortality tracking
 export enum MortalityCause {
-  DISEASE = 'DISEASE',     // Penyakit
-  CULLED = 'CULLED',       // Afkir (voluntary removal)
-  OTHER = 'OTHER',         // Lainnya
+  DISEASE = 'DISEASE',
+  CULLED = 'CULLED',
+  OTHER = 'OTHER',
 }
 
 // ACCOUNTING TYPES
@@ -109,7 +108,6 @@ export enum PaymentStatus {
   PIUTANG = 'PIUTANG'
 }
 
-// Relational Payment History
 export interface APARPayment {
   id: string;
   aparRecordId: string;
@@ -443,14 +441,14 @@ export interface FarmSettings {
   lowHDPAlertThreshold: number;      // % below standard before alert (e.g. 5)
   targetFCR: number;                 // Feed Conversion Ratio Target
   stdFeedIntake: number;             // Standard feed intake per layer (e.g. 115g)
-  
+
   // Master Data
   strains: string[];                 // Isa Brown, Lohmann, etc.
   units: string[];                   // kg, liter, ml, etc.
   wasteFreePercentage: number;       // Target/Limit for Waste & Free Goods
   masterPrices: MasterPrice[];       // NEW: Dynamic master prices
   suppliers: Supplier[];             // NEW: Suppliers data
-  
+
   // Capital
   initialCapital: number;            // global modal awal farm
   // Depreciation
@@ -463,7 +461,7 @@ export interface FarmSettings {
   layerValueTotal: number;           // nilai ayam (pullet)
   layerLifeYears: number;            // umur ekonomis ayam (dalam tahun atau bulan)
   layerSalvageValue: number;         // nilai sisa/afkir ayam
-  
+
   // NEW FEATURES
   workerEggAllowancePerDay: number;  // default 5
   abnormalEggTolerancePct: number;   // default 2%

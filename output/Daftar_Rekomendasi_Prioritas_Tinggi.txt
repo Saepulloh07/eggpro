@@ -1,0 +1,31 @@
+================================================================================
+REKOMENDASI PRIORITAS TINGGI - POULTRYMIND ERP
+================================================================================
+
+1. [URGENT] Perbaikan Logika Jatah Telur Pekerja
+--------------------------------------------------------------------------------
+Hapus logika Daily Cron di App.tsx yang memotong stok via frontend. Pindahkan dan standarisasi logika jatah pekerja di backend agar hanya berjalan SEKALI per hari per kandang. Gunakan tabel `allowance_logs` untuk mencatat jatah yang sudah diambil agar tidak terpotong berulang kali saat input produksi.
+
+2. [URGENT] Standarisasi Rumus FCR
+--------------------------------------------------------------------------------
+Ubah seluruh tampilan FCR di modul Production, Inventory, dan Analytics agar konsisten menggunakan rumus (Total Feed kg / Total Egg Mass kg). Hindari penggunaan (Feed / Butir) untuk menghindari kebingungan interpretasi performa teknis.
+
+3. [HIGH] Perbaikan Filter Laporan Laba Rugi
+--------------------------------------------------------------------------------
+Pastikan totalDepreciation di Finance.tsx hanya menghitung penyusutan untuk periode yang dipilih (Current Month), bukan akumulasi total sejak aset dibeli. Ini krusial agar Laba Bersih bulanan tidak terdistorsi.
+
+4. [HIGH] Implementasi Idempotency/Locking pada Tombol Simpan
+--------------------------------------------------------------------------------
+Tambahkan state `isSaving` di seluruh modal transaksi (Finance, Sales, Production) untuk menonaktifkan tombol simpan segera setelah diklik. Ini mencegah duplikasi data akibat double-clicking.
+
+5. [MEDIUM] Audit Trail Detail
+--------------------------------------------------------------------------------
+Tambahkan kolom `created_at`, `updated_at`, dan `created_by` pada setiap tabel database (terutama jurnal dan transaksi) untuk keperluan audit forensic jika terjadi selisih saldo di masa depan.
+
+6. [MEDIUM] Validasi Range Umur Ayam pada FCR
+--------------------------------------------------------------------------------
+Gunakan data `arrivalDate` dan `arrivalAgeWeeks` untuk menghitung umur ayam secara dinamis, lalu bandingkan FCR riil dengan standar kurva ISA Brown/Lohmann untuk memberikan Alert jika FCR membengkak di luar batas normal.
+
+================================================================================
+ESTIMASI PENGERJAAN: 3-5 Hari Kerja untuk Prioritas Urgent & High.
+================================================================================

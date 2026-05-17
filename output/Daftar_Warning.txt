@@ -1,0 +1,33 @@
+================================================================================
+DAFTAR WARNING & OBSERVASI - POULTRYMIND ERP
+================================================================================
+
+[WRN-001] [OPERATIONAL] Estimasi Massa Telur
+--------------------------------------------------------------------------------
+Aplikasi menggunakan angka default 62.5g (0.0625kg) per butir jika eggWeight tidak diisi. Angka ini adalah rata-rata telur ayam layer dewasa. Namun, untuk ayam muda (pullet), berat telur bisa mulai dari 40g.
+Risiko: FCR untuk flock muda akan terlihat lebih bagus (lebih efisien) dari kenyataannya karena massa telur di-overestimate.
+
+[WRN-002] [FINANCIAL] Sinking Fund sebagai Beban
+--------------------------------------------------------------------------------
+Penyisihan dana cadangan (Sinking Fund) dicatat sebagai beban (Expense). Secara akuntansi pajak, ini mungkin tidak bisa diakui sebagai biaya pengurang pajak.
+Risiko: Ketidaksesuaian laporan keuangan untuk keperluan audit eksternal atau perpajakan.
+
+[WRN-003] [DATA INTEGRITY] Deletion without Cascade Check
+--------------------------------------------------------------------------------
+Fungsi deleteTransaction di backend (transaction.ts:243) menggunakan mekanisme VOID (prefix [VOID]), namun penghapusan melalui sync endpoint (sync.ts:241) melakukan hard delete (DELETE FROM).
+Risiko: Jika user menghapus master data (seperti akun atau house) yang sudah memiliki transaksi, database akan error (FK Constraint) atau meninggalkan data yatim (orphan) jika FK tidak diatur.
+
+[WRN-004] [USER EXPERIENCE] Missing Loading States
+--------------------------------------------------------------------------------
+Beberapa tombol submit di Finance.tsx belum sepenuhnya mengimplementasikan loading state (isSaving) secara merata di semua modal.
+Risiko: Double submit oleh user jika jaringan lambat, yang menyebabkan duplikasi jurnal.
+
+[WRN-005] [SECURITY] Session Persistence
+--------------------------------------------------------------------------------
+Sesi login disimpan di localStorage/localforage tanpa expired time yang ketat.
+Risiko: Jika perangkat dipinjam orang lain, akses ke data finansial sensitif tetap terbuka.
+
+================================================================================
+STATUS: WARNING
+Aplikasi berfungsi dengan baik secara umum, namun memerlukan penyempurnaan pada detail logika bisnis dan keamanan sesi.
+================================================================================

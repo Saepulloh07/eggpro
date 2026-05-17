@@ -312,6 +312,36 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const newRecord = { ...record, id, createdAt: new Date().toISOString() };
     setApArRecords(prev => [...prev, newRecord]);
     syncRecord('poultry_apar', newRecord);
+
+    // PROFESSIONAL JOURNALING:
+    // When a debt/receivable is recorded, it must be journaled to keep the balance sheet balanced.
+    const today = new Date().toISOString().split('T')[0];
+    const isHutang = record.type === 'HUTANG';
+    
+    // Choose appropriate accounts based on description keywords
+    let debitAcc = '';
+    let creditAcc = '';
+    
+    if (isHutang) {
+      // Manual Debt: Credit a Liability account, Debit an Expense or Asset account
+      debitAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-persediaan-pakan' : 
+                 record.description?.toLowerCase().includes('obat') ? 'acc-persediaan-obat' : 'acc-beban-lain';
+      creditAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' : 
+                  record.description?.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
+    } else {
+      // Manual Receivable: Debit an Asset (Receivable) account, Credit a Revenue or Asset account
+      debitAcc = 'acc-piutang-telur';
+      creditAcc = record.description?.toLowerCase().includes('telur') ? 'acc-penjualan-telur' : 'acc-penjualan-lain';
+    }
+
+    addJournalEntry({
+      date: today,
+      description: `Pencatatan ${record.type}: ${record.entityName} - ${record.description}`,
+      reference: `REG-${id.slice(-4)}`
+    }, [
+      { accountId: debitAcc, debit: record.amount, credit: 0, houseId: record.houseId },
+      { accountId: creditAcc, debit: 0, credit: record.amount, houseId: record.houseId }
+    ]);
   };
 
   const updateAPARRecord = async (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => {
@@ -617,9 +647,25 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Recipe CRUD
-  const addRecipe = (r: any) => setRecipes(prev => [...prev, { ...r, id: generateUUID() }]);
-  const updateRecipe = (id: string, updates: any) => setRecipes(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-  const deleteRecipe = (id: string) => setRecipes(prev => prev.filter(r => r.id !== id));
+  const addRecipe = (r: any) => {
+    const newRecipe = { ...r, id: generateUUID() };
+    setRecipes(prev => [...prev, newRecipe]);
+    syncRecord('poultry_recipes', newRecipe);
+  };
+  const updateRecipe = (id: string, updates: any) => {
+    setRecipes(prev => prev.map(r => {
+      if (r.id === id) {
+        const updated = { ...r, ...updates };
+        syncRecord('poultry_recipes', updated);
+        return updated;
+      }
+      return r;
+    }));
+  };
+  const deleteRecipe = (id: string) => {
+    setRecipes(prev => prev.filter(r => r.id !== id));
+    deleteRecord('poultry_recipes', id);
+  };
 
   // ─── Computed Analytics ────────────────────────────────────────────────────
 

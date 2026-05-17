@@ -1,8 +1,0 @@
-REKOMENDASI PRIORITAS TINGGI
-============================
-
-1. Penguatan Audit Trail
-   - Tambahkan tabel `audit_logs` yang mencatat `siapa, kapan, aksi apa, data lama, data baru`. Ini krusial untuk mencegah fraud (pencurian telur atau manipulasi kas).
-
-2. Otomasi Sinking Fund
-   - Integrasikan sinking fund langsung ke HPP harian secara otomatis. Setiap butir telur yang diproduksi harus langsung menyisihkan nilai tertentu (misal Rp200) ke akun Cadangan Peremajaan.

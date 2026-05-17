@@ -138,7 +138,7 @@ export default function Dashboard() {
         const hdp = log && currentCount > 0 ? (log.eggCount / currentCount) * 100 : null;
         result.push({
           name: d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
-          produksi: log ? (log.totalButir ?? (log as any).totalKg ?? 0) : 0,
+          produksi: log ? (log.totalButir ?? 0) : 0,
           pakan: log ? log.feedConsumed : 0,
           hdp: hdp ? parseFloat(hdp.toFixed(1)) : null,
           standar: getStrainStandardHDP(ageWeeks),
@@ -158,7 +158,7 @@ export default function Dashboard() {
         houseLogs.forEach(l => {
           const ld = new Date(l.date);
           if (ld >= startD && ld <= endD) {
-            totalProd += (l.totalButir ?? (l as any).totalKg ?? 0);
+            totalProd += (l.totalButir ?? 0);
             totalPakan += l.feedConsumed;
             totalMortality += l.mortality;
             totalEggCount += l.eggCount;
@@ -187,7 +187,7 @@ export default function Dashboard() {
 
         houseLogs.forEach(l => {
           if (l.date.startsWith(monthStr)) {
-            totalProd += (l.totalButir ?? (l as any).totalKg ?? 0);
+            totalProd += (l.totalButir ?? 0);
             totalPakan += l.feedConsumed;
             totalMortality += l.mortality;
             totalEggCount += l.eggCount;
@@ -217,7 +217,7 @@ export default function Dashboard() {
   const todayHDP = lastLog && currentCount > 0 ? (lastLog.eggCount / currentCount) * 100 : 0;
 
   const totalFeed = houseLogs.reduce((a, b) => a + b.feedConsumed, 0);
-  const totalEggWeightKg = houseLogs.reduce((a, b) => a + (b.eggWeight || 0), 0);
+  const totalEggWeightKg = houseLogs.reduce((a, b) => a + (b.eggWeight || (b.eggCount * 0.0625)), 0);
   const cumulativeFCR = totalEggWeightKg > 0 ? totalFeed / totalEggWeightKg : 0;
 
   const feedIntakePerBird = lastLog && currentCount > 0 ? (lastLog.feedConsumed * 1000) / currentCount : 0;
@@ -503,7 +503,7 @@ export default function Dashboard() {
                 ))}
                 <div className="pt-2 border-t border-slate-100 flex justify-between">
                   <span className="text-[9px] text-slate-400 font-bold uppercase">Total</span>
-                  <span className="text-[10px] font-black text-slate-900">{(lastLog.totalButir ?? (lastLog as any).totalKg ?? 0).toLocaleString()} butir</span>
+                  <span className="text-[10px] font-black text-slate-900">{(lastLog.totalButir ?? 0).toLocaleString()} butir</span>
                 </div>
               </div>
             ) : (

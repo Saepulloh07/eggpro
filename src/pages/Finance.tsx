@@ -44,7 +44,7 @@ export default function Finance() {
     const [selectedApArId, setSelectedApArId] = useState<string | null>(null);
     const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-
+    const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
 
     // Pagination State
     const [prodPage, setProdPage] = useState(1);
@@ -57,17 +57,18 @@ export default function Finance() {
 
     // --- Filtering Data based on Scope ---
     const isKonsolidasi = !activeHouse;
-    const filteredProdLogs = isKonsolidasi ? productionLogs : productionLogs.filter(p => p.houseId === activeHouse?.id);
-    const filteredSalesLogs = isKonsolidasi ? salesLogs : salesLogs.filter(s => s.houseId === activeHouse?.id);
-
-    const houseTransactions = isKonsolidasi ? transactions : transactions.filter(t => t.houseId === activeHouse?.id);
-
-    // AKUNTANSI FIX 1: Memisahkan Belanja Modal (CapEx) dan Pelunasan dari Beban Operasional (OpEx)
+    const filteredProdLogs = isKonsolidasi 
+        ? productionLogs.filter(p => p.date.startsWith(selectedMonth)) 
+        : productionLogs.filter(p => p.houseId === activeHouse?.id && p.date.startsWith(selectedMonth));
+    const filteredSalesLogs = isKonsolidasi 
+        ? salesLogs.filter(s => s.date.startsWith(selectedMonth)) 
+        : salesLogs.filter(s => s.houseId === activeHouse?.id && s.date.startsWith(selectedMonth));
+    const houseTransactions = isKonsolidasi 
+        ? transactions.filter(t => t.date.startsWith(selectedMonth)) 
+        : transactions.filter(t => t.houseId === activeHouse?.id && t.date.startsWith(selectedMonth));
     const expenseTransactions = houseTransactions.filter(t => {
         if (t.type !== 'EXPENSE' || t.category === 'Pelunasan') return false;
         const account = accounts.find(a => a.id === t.account || a.name === t.account);
-        // Fallback: If account is an asset (e.g. Kas) but it's an EXPENSE type, 
-        // we check if the category is a known operational category.
         const knownExpenseCategories = ['Pakan', 'Obat', 'Gaji', 'Listrik', 'Air', 'BBM', 'WIFI', 'ATK', 'Konsumsi', 'Sewa', 'Lain-lain'];
         const isKnownOpEx = t.category && knownExpenseCategories.includes(t.category);
 
@@ -120,12 +121,12 @@ export default function Finance() {
 
     // Operational Expenses
     const filteredOpEx = isKonsolidasi
-        ? operationalExpenses
-        : operationalExpenses.filter(e => e.houseId === activeHouse?.id);
+        ? operationalExpenses.filter(e => e.date.startsWith(selectedMonth))
+        : operationalExpenses.filter(e => e.houseId === activeHouse?.id && e.date.startsWith(selectedMonth));
     const totalOpEx = filteredOpEx.reduce((acc, curr) => acc + curr.amount, 0);
 
     // Depreciation (Amortization)
-    const calculateDepreciation = (asset: Asset) => {
+    const calculateAccumulatedDepreciation = (asset: Asset) => {
         const purchaseDate = new Date(asset.purchaseDate);
         const today = new Date();
         const diffMonths = (today.getFullYear() - purchaseDate.getFullYear()) * 12 + (today.getMonth() - purchaseDate.getMonth());
@@ -133,12 +134,30 @@ export default function Finance() {
         const salvageValue = asset.salvageValue || 0;
         const depreciableAmount = asset.purchasePrice - salvageValue;
 
-        // Garis Lurus
+        // Accumulated
         const totalDepreciation = (depreciableAmount / (asset.expectedLifeYears * 12)) * Math.max(0, diffMonths);
         return Math.min(depreciableAmount, totalDepreciation);
     };
 
-    const totalDepreciation = houseAssets.reduce((acc, a) => acc + (calculateDepreciation(a) * (a.quantity || 1)), 0);
+    const calculatePeriodicDepreciation = (asset: Asset) => {
+        const salvageValue = asset.salvageValue || 0;
+        const depreciableAmount = asset.purchasePrice - salvageValue;
+        const monthlyDepreciation = depreciableAmount / (asset.expectedLifeYears * 12);
+        
+        // Check if asset is already fully depreciated or not yet purchased
+        const purchaseDateStr = asset.purchaseDate.slice(0, 7);
+        if (purchaseDateStr > selectedMonth) return 0;
+        
+        const purchaseDate = new Date(asset.purchaseDate);
+        const today = new Date(selectedMonth + "-01");
+        const diffMonths = (today.getFullYear() - purchaseDate.getFullYear()) * 12 + (today.getMonth() - purchaseDate.getMonth());
+        
+        if (diffMonths >= (asset.expectedLifeYears * 12)) return 0;
+        
+        return monthlyDepreciation;
+    };
+
+    const totalDepreciation = houseAssets.reduce((acc, a) => acc + (calculatePeriodicDepreciation(a) * (a.quantity || 1)), 0);
 
     // Net Profit Accrual
     const netProfit = totalAccrualIncome - totalUsageCost - totalOpEx - totalDepreciation;
@@ -441,7 +460,7 @@ export default function Finance() {
         s4.getRow(4).height = 22;
         houseAssets.forEach((asset, i) => {
             const qty = asset.quantity || 1;
-            const dep = calculateDepreciation(asset) * qty; const r = 5 + i;
+            const dep = calculateAccumulatedDepreciation(asset) * qty; const r = 5 + i;
             s4.getRow(r).values = [i + 1, asset.name, asset.category, qty, new Date(asset.purchaseDate), asset.purchasePrice, asset.condition, dep, (asset.purchasePrice * qty) - dep];
             [1, 2, 3, 4, 5, 6, 7, 8, 9].forEach(ci => styleData(s4.getCell(r, ci), i % 2 === 1));
             [6, 8, 9].forEach(ci => { s4.getCell(r, ci).numFmt = formatIDR; });
@@ -650,7 +669,16 @@ export default function Finance() {
                             <h1 className="text-base md:text-xl font-black text-slate-900 tracking-tight uppercase">Finance & Accounting</h1>
                             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest hidden md:block">Manajemen keuangan sesuai standar akuntansi peternakan</p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
+                            <div className="flex flex-col items-end">
+                                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Periode Laporan</label>
+                                <input 
+                                    type="month" 
+                                    value={selectedMonth} 
+                                    onChange={(e) => setSelectedMonth(e.target.value)}
+                                    className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-amber-500 shadow-sm"
+                                />
+                            </div>
                             <button onClick={() => setIsOpexModalOpen(true)}
                                 className="hidden md:flex items-center gap-1.5 bg-amber-500 text-white px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-wide hover:bg-amber-600 transition-all shadow-sm">
                                 <span>+</span> Biaya Harian
@@ -1395,7 +1423,7 @@ export default function Finance() {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {houseAssets.map((asset) => {
                                         const qty = asset.quantity || 1;
-                                        const depreciation = calculateDepreciation(asset) * qty;
+                                        const depreciation = calculateAccumulatedDepreciation(asset) * qty;
                                         const currentValue = (asset.purchasePrice * qty) - depreciation;
                                         return (
                                             <div
@@ -1485,7 +1513,7 @@ export default function Finance() {
                                                         const age31_60 = isOverdue && age > 30 && age <= 60 ? r.remainingAmount : 0;
                                                         const age61_90 = isOverdue && age > 60 && age <= 90 ? r.remainingAmount : 0;
                                                         const age90Plus = isOverdue && age > 90 ? r.remainingAmount : 0;
-                                                        const payments = aparPayments.filter(p => p.apArId === r.id);
+                                                        const payments = aparPayments.filter(p => p.aparRecordId === r.id);
 
                                                         return (
                                                             <React.Fragment key={i}>
@@ -1531,8 +1559,8 @@ export default function Finance() {
                                                                                         <div key={p.id} className="text-[9px] flex items-center justify-between bg-white px-2 py-1 border border-slate-100 rounded-sm">
                                                                                             <div className="flex items-center gap-3">
                                                                                                 <span className="font-bold text-slate-600">{new Date(p.date).toLocaleDateString('id-ID')}</span>
-                                                                                                <span className="text-slate-500">{accounts.find(a => a.id === p.paymentAccountId)?.name || 'Akun Tidak Ditemukan'}</span>
-                                                                                                <span className="text-slate-400 italic">Ref: {p.referenceNumber || '-'}</span>
+                                                                                                <span className="text-slate-500">{accounts.find(a => a.id === p.accountId)?.name || 'Akun Tidak Ditemukan'}</span>
+                                                                                                <span className="text-slate-400 italic">Ref: {p.reference || '-'}</span>
                                                                                             </div>
                                                                                             <span className="font-mono font-bold text-slate-700">{formatCurrency(p.amount)}</span>
                                                                                         </div>
@@ -2089,16 +2117,24 @@ export default function Finance() {
                     const record = apArRecords.find(r => r.id === selectedApArId);
                     if (!record) return null;
                     return (
-                        <form onSubmit={(e) => {
+                        <form onSubmit={async (e) => {
                             e.preventDefault();
-                            const fd = new FormData(e.target as HTMLFormElement);
-                            const amount = Number(fd.get('amount'));
-                            const accId = fd.get('accountId') as string;
-                            const notes = fd.get('notes') as string;
+                            if (isSaving) return;
+                            setIsSaving(true);
+                            try {
+                                const fd = new FormData(e.target as HTMLFormElement);
+                                const amount = Number(fd.get('amount'));
+                                const accId = fd.get('accountId') as string;
+                                const notes = fd.get('notes') as string;
 
-                            updateAPARRecord(record.id, amount, accId, notes);
-                            setIsSettlementModalOpen(false);
-                            Swal.fire('Berhasil', 'Pembayaran telah dicatat dan dijurnal.', 'success');
+                                await updateAPARRecord(record.id, amount, accId, notes);
+                                setIsSettlementModalOpen(false);
+                                Swal.fire('Berhasil', 'Pembayaran telah dicatat dan dijurnal.', 'success');
+                            } catch (err: any) {
+                                Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
+                            } finally {
+                                setIsSaving(false);
+                            }
                         }} className="space-y-5">
                             <div className="p-4 bg-slate-900 border border-slate-800 text-white rounded-sm">
                                 <p className="text-[10px] font-bold text-amber-500 uppercase tracking-[0.2em] mb-1">{record.type === 'HUTANG' ? 'HUTANG KEPADA' : 'PIUTANG DARI'}</p>
@@ -2131,8 +2167,8 @@ export default function Finance() {
                                 <input name="notes" type="text" placeholder="Cth: Cicilan ke-1 atau Pelunasan penuh" className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
                             </div>
 
-                            <button type="submit" className="w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 flex items-center justify-center gap-2">
-                                <CheckCircle size={16} /> Konfirmasi Pembayaran
+                            <button type="submit" disabled={isSaving} className={cn("w-full bg-slate-900 text-white py-4 rounded-sm font-bold text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 flex items-center justify-center gap-2", isSaving && "opacity-50 cursor-not-allowed")}>
+                                <CheckCircle size={16} /> {isSaving ? 'Memproses...' : 'Konfirmasi Pembayaran'}
                             </button>
                         </form>
                     );
