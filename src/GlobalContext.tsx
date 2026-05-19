@@ -128,10 +128,10 @@ interface GlobalContextType {
   updateRecipe: (id: string, updates: any) => Promise<void>;
   deleteRecipe: (id: string) => Promise<void>;
   getHDP: (houseId: string, date: string, currentCount: number) => number;
-  getHHP: (houseId: string, initialCount: number) => number;
-  getCumulativeFCR: (houseId: string) => number;
+  getHHP: (houseId: string, initialCount: number, arrivalDate?: string) => number;
+  getCumulativeFCR: (houseId: string, arrivalDate?: string) => number;
   getFeedIntakePerBird: (houseId: string, currentCount: number) => number;
-  getFlockAnalytics: (houseId: string, currentCount: number) => FlockAnalytics;
+  getFlockAnalytics: (houseId: string, currentCount: number, arrivalDate?: string) => FlockAnalytics;
   getAccountBalance: (accountId: string) => { debit: number; credit: number; balance: number };
   getTrialBalance: () => { accountId: string; name: string; code: string; category: AccountCategory; debit: number; credit: number }[];
   farmSettings: FarmSettings;
@@ -599,9 +599,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSalesLogs(prev => [...prev, newSale]);
     syncRecord('poultry_sales_logs', newSale);
 
+    let itemCost = 1500; // fallback estimated HPP
+
     // Always deduct from inventory for both paid and free sales
     setInventory(prev => prev.map(item => {
-      if (item.type === ItemType.EGG_STOCK && item.eggCategory === saleData.category && item.houseId === saleData.houseId) {
+      const isEggMatch = item.type === ItemType.EGG_STOCK && item.eggCategory === saleData.category;
+      const isNonEggMatch = item.type !== ItemType.EGG_STOCK && item.name === saleData.category;
+      
+      if ((isEggMatch || isNonEggMatch) && item.houseId === saleData.houseId) {
+        itemCost = item.lastPrice || 1500;
         const updated = { ...item, quantity: Math.max(0, item.quantity - saleData.quantity) };
         syncRecord('poultry_inventory_v2', updated);
         return updated;
@@ -630,17 +636,34 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       category: saleData.isFree ? 'Free Goods' : 'Penjualan'
     });
 
-    // Create journal entry if it's a paid sale
+    // Create journal entry
+    const isAfkir = saleData.category.toLowerCase().includes('afkir');
+    const isLimbah = saleData.category.toLowerCase().includes('limbah') || saleData.category.toLowerCase().includes('kotoran');
+    const revenueAccount = isAfkir ? 'acc-penjualan-afkir' : isLimbah ? 'acc-penjualan-kotoran' : 'acc-penjualan-telur';
+
     if (!saleData.isFree && saleData.total > 0) {
       addJournalEntry(
         {
           date: saleData.date,
-          description: `Penjualan Telur: ${saleData.category}`,
+          description: `Penjualan ${saleData.category}`,
           reference: txId
         },
         [
           { accountId: selectedAcc.id, debit: saleData.total, credit: 0, houseId: saleData.houseId },
-          { accountId: 'acc-penjualan-telur', debit: 0, credit: saleData.total, houseId: saleData.houseId }
+          { accountId: revenueAccount, debit: 0, credit: saleData.total, houseId: saleData.houseId }
+        ]
+      );
+    } else if (saleData.isFree && saleData.quantity > 0) {
+      const freeCost = saleData.quantity * itemCost;
+      addJournalEntry(
+        {
+          date: saleData.date,
+          description: `Alokasi Gratis: ${saleData.category} (${saleData.quantity} qty)`,
+          reference: txId
+        },
+        [
+          { accountId: 'acc-beban-promosi', debit: freeCost, credit: 0, houseId: saleData.houseId },
+          { accountId: 'acc-persediaan-telur', debit: 0, credit: freeCost, houseId: saleData.houseId }
         ]
       );
     }
@@ -676,19 +699,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return (log.eggCount / currentCount) * 100;
   };
 
-  /** HHP % (Hen Housed Production) */
-  const getHHP = (houseId: string, initialCount: number): number => {
-    const logs = productionLogs.filter(p => p.houseId === houseId);
+  /** HHP (Hen Housed Production) */
+  const getHHP = (houseId: string, initialCount: number, arrivalDate?: string): number => {
+    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDate || p.date >= arrivalDate));
     if (logs.length === 0 || initialCount === 0) return 0;
     const totalEggs = logs.reduce((sum, log) => sum + log.eggCount, 0);
-    return (totalEggs / initialCount) * 100;
+    return totalEggs / initialCount;
   };
 
   /** Cumulative FCR = total feed consumed / total egg kg for a house */
-  const getCumulativeFCR = (houseId: string): number => {
-    const logs = productionLogs.filter(p => p.houseId === houseId);
+  const getCumulativeFCR = (houseId: string, arrivalDate?: string): number => {
+    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDate || p.date >= arrivalDate));
     const totalFeed = logs.reduce((a, b) => a + b.feedConsumed, 0);
-    // FIX #4: Estimate egg mass if eggWeight is missing (assume 62.5g or 0.0625kg per egg)
+    // Estimate egg mass if eggWeight is missing (assume 62.5g or 0.0625kg per egg)
     const totalKg = logs.reduce((a, b) => a + (b.eggWeight || (b.eggCount * 0.0625)), 0);
     if (totalKg === 0) return 0;
     return totalFeed / totalKg;
@@ -703,8 +726,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   /** Full analytics bundle for a flock */
-  const getFlockAnalytics = (houseId: string, currentCount: number): FlockAnalytics => {
-    const logs = productionLogs.filter(p => p.houseId === houseId);
+  const getFlockAnalytics = (houseId: string, currentCount: number, arrivalDate?: string): FlockAnalytics => {
+    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDate || p.date >= arrivalDate));
     const totalFeed = logs.reduce((a, b) => a + b.feedConsumed, 0);
     const totalButir = logs.reduce((a, b) => a + b.totalButir, 0);
     // Estimate egg mass if missing
@@ -713,6 +736,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // 1. Feed Cost (Consumed Feed * Unit Price)
     const totalFeedCost = logs.reduce((acc, log) => {
+      const mutation = stockMutations.find(m => m.reference === `Prod Feed: ${log.id}`);
+      if (mutation && mutation.totalCost > 0) {
+        return acc + mutation.totalCost;
+      }
       const item = inventory.find(i => i.id === log.feedInventoryItemId);
       return acc + (item ? log.feedConsumed * (item.lastPrice || 0) : 0);
     }, 0);
@@ -759,7 +786,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const saveFarmSettings = async (settings: Partial<FarmSettings>) => {
     setFarmSettings(prev => ({ ...prev, ...settings }));
-    syncRecord('poultry_farm_settings', settings);
+    syncRecord('poultry_farm_settings', { id: 'singleton', ...settings });
   };
 
   const addModalAwal = async (amount: number, description = 'Modal Awal', houseId?: string, targetAccountId?: string) => {
@@ -949,22 +976,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addBiosecurityRecord = (data: Omit<BiosecurityRecord, 'id'>) => {
-    setBiosecurityRecords(prev => [...prev, { ...data, id: `vax-${Date.now()}` }]);
+    const newRecord = { ...data, id: `vax-${Date.now()}` };
+    setBiosecurityRecords(prev => [...prev, newRecord]);
+    syncRecord('poultry_biosecurity', newRecord);
   };
 
   const addBiosecurityRecordsBulk = (data: Omit<BiosecurityRecord, 'id'>[]) => {
     const timestamp = Date.now();
     const newRecords = data.map((d, index) => ({ ...d, id: `vax-${timestamp}-${index}` }));
     setBiosecurityRecords(prev => [...prev, ...newRecords]);
+    newRecords.forEach(r => syncRecord('poultry_biosecurity', r));
   };
 
 
   const updateBiosecurityRecord = (id: string, updates: Partial<BiosecurityRecord>) => {
-    setBiosecurityRecords(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+    setBiosecurityRecords(prev => {
+      const updated = prev.map(r => r.id === id ? { ...r, ...updates } : r);
+      const target = updated.find(r => r.id === id);
+      if (target) syncRecord('poultry_biosecurity', target);
+      return updated;
+    });
   };
 
   const deleteBiosecurityRecord = (id: string) => {
     setBiosecurityRecords(prev => prev.filter(r => r.id !== id));
+    deleteRecord('poultry_biosecurity', id);
   };
 
   return (

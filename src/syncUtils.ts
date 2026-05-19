@@ -98,11 +98,10 @@ export const deleteRecord = async (key: string, id: string) => {
     if (!res.ok) throw new Error('Server error');
   } catch (error) {
     console.warn(`[Offline] Queueing deletion for ${key}:${id}`, error);
-    // Add to a generic sync queue
-    const queue = await localforage.getItem<string[]>('sync_queue') || [];
-    if (!queue.includes(key)) {
-      await localforage.setItem('sync_queue', [...queue, key]);
-    }
+    // Add to specific delete queue
+    const queue = await localforage.getItem<{key: string, id: string}[]>('sync_delete_queue') || [];
+    queue.push({ key, id });
+    await localforage.setItem('sync_delete_queue', queue);
   }
 };
 
@@ -136,6 +135,23 @@ export const syncToDb = async (key: string, data: any) => {
 };
 
 export const processSyncQueue = async () => {
+  const apiUrl = import.meta.env.VITE_API_URL || '';
+
+  // Process offline deletions first
+  const delQueue = await localforage.getItem<{key: string, id: string}[]>('sync_delete_queue') || [];
+  if (delQueue.length > 0) {
+    const remainingDelQueue = [];
+    for (const del of delQueue) {
+      try {
+        const res = await fetch(`${apiUrl}/api/sync/${del.key}/${del.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
+      } catch (e) {
+        remainingDelQueue.push(del);
+      }
+    }
+    await localforage.setItem('sync_delete_queue', remainingDelQueue);
+  }
+
   const queue = await localforage.getItem<string[]>('sync_queue') || [];
   if (queue.length === 0) return;
   

@@ -511,41 +511,55 @@ export const DEFAULT_FARM_SETTINGS: FarmSettings = {
 };
 
 export const DEFAULT_ACCOUNTS: Account[] = [
-  // ASSETS
-  { id: 'acc-kas', code: '1101', name: 'Kas Utama (Farm)', category: AccountCategory.ASSET, isCashOrBank: true, isSystem: true },
-  { id: 'acc-bank-bca', code: '1102', name: 'Bank BCA', category: AccountCategory.ASSET, isCashOrBank: true, isSystem: true },
-  { id: 'acc-piutang-telur', code: '1103', name: 'Piutang Penjualan Telur', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-piutang-antar', code: '1104', name: 'Piutang Antar Kandang', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-persediaan-pakan', code: '1111', name: 'Persediaan Pakan', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-persediaan-obat', code: '1112', name: 'Persediaan Obat & Vaksin', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-telur-stock', code: '1113', name: 'Persediaan Stok Telur', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-aset-kandang', code: '1201', name: 'Aset Kandang & Bangunan', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-aset-peralatan', code: '1202', name: 'Aset Peralatan', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-aset-ayam', code: '1203', name: 'Aset Ayam (Pullet)', category: AccountCategory.ASSET, isSystem: true },
-  { id: 'acc-bank-cadangan', code: '1301', name: 'Bank (Dana Cadangan Peremajaan)', category: AccountCategory.ASSET, isSystem: true },
-
-  // LIABILITIES
-  { id: 'acc-hutang-pakan', code: '2101', name: 'Hutang Pakan', category: AccountCategory.LIABILITY, isSystem: true },
-  { id: 'acc-hutang-doc', code: '2102', name: 'Hutang DOC', category: AccountCategory.LIABILITY, isSystem: true },
-  { id: 'acc-hutang-antar', code: '2103', name: 'Hutang Antar Kandang', category: AccountCategory.LIABILITY, isSystem: true },
-  { id: 'acc-hutang-dagang', code: '2104', name: 'Hutang Dagang Lainnya', category: AccountCategory.LIABILITY, isSystem: true },
-
-  // EQUITY
-  { id: 'acc-modal', code: '3101', name: 'Modal Pemilik', category: AccountCategory.EQUITY, isSystem: true },
-  { id: 'acc-laba-ditahan', code: '3201', name: 'Laba Ditahan', category: AccountCategory.EQUITY, isSystem: true },
-  { id: 'acc-cadangan-ekuitas', code: '3301', name: 'Cadangan Ekuitas (Sinking Fund)', category: AccountCategory.EQUITY, isSystem: true },
-
-  // REVENUE
-  { id: 'acc-penjualan-telur', code: '4101', name: 'Pendapatan Jual Telur', category: AccountCategory.REVENUE, isSystem: true },
-  { id: 'acc-penjualan-afkir', code: '4102', name: 'Pendapatan Jual Ayam Afkir', category: AccountCategory.REVENUE, isSystem: true },
-  { id: 'acc-penjualan-lain', code: '4103', name: 'Pendapatan Lain-lain', category: AccountCategory.REVENUE, isSystem: true },
-
-  // EXPENSES
-  { id: 'acc-beban-pakan', code: '5101', name: 'Beban Pakan (HPP)', category: AccountCategory.EXPENSE, isSystem: true },
-  { id: 'acc-beban-obat', code: '5102', name: 'Beban Obat & Vaksin (HPP)', category: AccountCategory.EXPENSE, isSystem: true },
-  { id: 'acc-beban-gaji', code: '5201', name: 'Beban Gaji & Upah', category: AccountCategory.EXPENSE, isSystem: true },
-  { id: 'acc-beban-listrik', code: '5202', name: 'Beban Listrik & Air', category: AccountCategory.EXPENSE, isSystem: true },
-  { id: 'acc-beban-penyisihan', code: '5301', name: 'Beban Penyisihan Dana Cadangan', category: AccountCategory.EXPENSE, isSystem: true },
-  { id: 'acc-beban-penyusutan', code: '5401', name: 'Beban Penyusutan Aset', category: AccountCategory.EXPENSE, isSystem: true },
-  { id: 'acc-beban-lain', code: '5999', name: 'Beban Operasional Lainnya', category: AccountCategory.EXPENSE, isSystem: true },
+  // ── ASET LANCAR (1-1xxx) ──
+  { id: 'acc-kas', code: '1-1100', name: 'Kas Utama (Farm)', category: AccountCategory.ASSET, isCashOrBank: true, isSystem: true },
+  { id: 'acc-bank-bca', code: '1-1110', name: 'Bank BCA', category: AccountCategory.ASSET, isCashOrBank: true, isSystem: true },
+  { id: 'acc-bank-mandiri', code: '1-1111', name: 'Bank Mandiri', category: AccountCategory.ASSET, isCashOrBank: true, isSystem: true },
+  { id: 'acc-piutang-usaha', code: '1-1201', name: 'Piutang Usaha (Telur)', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-piutang-antar', code: '1-1202', name: 'Piutang Antar Kandang', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-persediaan-pakan', code: '1-1301', name: 'Persediaan Pakan (Gudang)', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-persediaan-obat', code: '1-1302', name: 'Persediaan Obat & Vaksin', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-persediaan-telur', code: '1-1303', name: 'Persediaan Telur', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  // ── ASET TETAP (1-2xxx) ──
+  { id: 'acc-bangunan', code: '1-2100', name: 'Bangunan Kandang', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-akum-bangunan', code: '1-2101', name: 'Akm. Penyusutan Bangunan', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-peralatan', code: '1-2200', name: 'Peralatan Kandang', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-akum-peralatan', code: '1-2201', name: 'Akm. Penyusutan Peralatan', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-kendaraan', code: '1-2300', name: 'Kendaraan', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-akum-kendaraan', code: '1-2301', name: 'Akm. Penyusutan Kendaraan', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-ternak', code: '1-2400', name: 'Ternak (Ayam Layer)', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  { id: 'acc-akum-ternak', code: '1-2401', name: 'Akm. Penyusutan Ternak', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
+  // ── LIABILITAS (2-1xxx) ──
+  { id: 'acc-hutang-usaha', code: '2-1100', name: 'Hutang Usaha (Supplier)', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-hutang-antar', code: '2-1200', name: 'Hutang Antar Kandang', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-hutang-gaji', code: '2-1300', name: 'Hutang Gaji', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-hutang-bank', code: '2-2100', name: 'Hutang Bank', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
+  // ── EKUITAS (3-1xxx) ──
+  { id: 'acc-modal', code: '3-1000', name: 'Modal Pemilik', category: AccountCategory.EQUITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-laba-ditahan', code: '3-1100', name: 'Laba Ditahan', category: AccountCategory.EQUITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-sinking-doc', code: '3-1201', name: 'Sinking Fund — DOC Baru', category: AccountCategory.EQUITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-sinking-kandang', code: '3-1202', name: 'Sinking Fund — Peremajaan', category: AccountCategory.EQUITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-sinking-cadangan', code: '3-1203', name: 'Dana Cadangan Umum', category: AccountCategory.EQUITY, isCashOrBank: false, isSystem: true },
+  // ── PENDAPATAN (4-1xxx) ──
+  { id: 'acc-penjualan-telur', code: '4-1000', name: 'Pendapatan Penjualan Telur', category: AccountCategory.REVENUE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-penjualan-afkir', code: '4-2001', name: 'Penjualan Ayam Afkir', category: AccountCategory.REVENUE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-penjualan-kotoran', code: '4-2002', name: 'Penjualan Kotoran Ayam', category: AccountCategory.REVENUE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-pendapatan-writeoff', code: '4-3000', name: 'Pendapatan Penghapusan Hutang', category: AccountCategory.REVENUE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-pendapatan-lain', code: '4-2999', name: 'Pendapatan Lain-lain', category: AccountCategory.REVENUE, isCashOrBank: false, isSystem: true },
+  // ── BEBAN POKOK PRODUKSI (5-1xxx) ──
+  { id: 'acc-beban-pakan', code: '5-1000', name: 'Beban Pakan', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-doc', code: '5-2000', name: 'Beban DOC & Bibit', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-susut-ternak', code: '5-3000', name: 'Beban Penyusutan Ternak', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-vaksin', code: '5-4000', name: 'Beban Obat & Vaksin', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  // ── BEBAN OPERASIONAL (6-1xxx) ──
+  { id: 'acc-beban-gaji', code: '6-1000', name: 'Beban Gaji & Upah', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-listrik', code: '6-2000', name: 'Beban Listrik & Air', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-perawatan', code: '6-3000', name: 'Beban Perawatan & Perbaikan', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-transport', code: '6-4000', name: 'Beban Transportasi', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-susut-bangunan', code: '6-5001', name: 'Beban Penyusutan Kandang', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-susut-alat', code: '6-5002', name: 'Beban Penyusutan Peralatan', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-admin', code: '6-6000', name: 'Beban Administrasi', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-lain', code: '6-7000', name: 'Beban Lain-lain', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-writeoff', code: '6-8000', name: 'Beban Penghapusan Piutang', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
+  { id: 'acc-beban-promosi', code: '6-9000', name: 'Beban Promosi / CSR', category: AccountCategory.EXPENSE, isCashOrBank: false, isSystem: true },
 ];

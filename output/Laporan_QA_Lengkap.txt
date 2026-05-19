@@ -1,79 +1,243 @@
 ================================================================================
-LAPORAN FULL QUALITY ASSURANCE (QA) TESTING & AUDIT SISTEM
-POULTRYMIND ERP - MANAGEMENT SYSTEM
+                    LAPORAN ENTERPRISE QUALITY ASSURANCE (QA)
+                   OPERATIONAL & FINANCIAL SYSTEM AUDIT REPORT
+================================================================================
+Aplikasi: Sistem Manajemen Peternakan Ayam Petelur & Keuangan ERP (PoultryMind)
+Auditor: Senior QA Engineer, System Auditor, & Poultry Financial Analyst
+Tanggal Audit: 19 Mei 2026
+Lokasi Workspace: Saepulloh07/manajemen-peternakan-ayam (d:\ayam petelur app)
+Status Hasil Audit: CONDITIONAL RELEASE (WITH CRITICAL HARDENING REQUIRED)
 ================================================================================
 
-TANGGAL AUDIT : 16 Mei 2026
-AUDITOR       : Senior QA Engineer, System Analyst, & Financial Auditor
-STATUS AKHIR  : WARNING (FIXES REQUIRED BEFORE GO-LIVE)
+--------------------------------------------------------------------------------
+I. EXECUTIVE SUMMARY (ABSTRAK EKSEKUTIF)
+--------------------------------------------------------------------------------
+Tujuan utama audit ini adalah melakukan evaluasi menyeluruh (Full Systematic Enterprise 
+Audit) terhadap aplikasi manajemen peternakan ayam petelur berskala industri. Audit 
+dilakukan dengan menguji arsitektur basis data, konsistensi transaksi ACID, 
+logika sinkronisasi offline-first, akurasi perhitungan poultry metrics (HDP, HHP, FCR), 
+serta kepatuhan modul akuntansi double-entry terhadap standar PSAK 69 (Aset Biologis) 
+dan prinsip akuntansi berterima umum (GAAP).
+
+Kesimpulan Utama:
+Secara fungsional dan desain antarmuka, aplikasi PoultryMind menyajikan visualisasi 
+yang sangat interaktif, premium, dan intuitif bagi pengelola peternakan di lapangan. 
+Namun, di balik visualisasi tersebut, ditemukan celah fatal (critical vulnerabilities) 
+pada lapisan sinkronisasi data, ketidakseimbangan jurnal akuntansi, distorsi formula 
+biologi, dan ketiadaan validasi kunci periode pada backend API. 
+
+Dengan status saat ini, aplikasi sangat rentan mengalami ketidakseimbangan neraca keuangan, 
+kehilangan data transaksi penting akibat cacat hapus offline, serta distorsi KPI 
+produksi yang dapat menyesatkan pengambilan keputusan investasi. Rekomendasi auditor 
+adalah MENAHAN DEPLOYMENT PROSES PRODUKSI SKALA BESAR sebelum seluruh temuan kritis 
+(Critical Findings) dalam laporan ini diselesaikan oleh tim pengembang.
 
 --------------------------------------------------------------------------------
-1. EXECUTIVE SUMMARY
---------------------------------------------------------------------------------
-Aplikasi PoultryMind ERP telah diaudit secara menyeluruh mencakup aspek teknis, operasional peternakan, dan akuntansi finansial. Secara arsitektur, sistem ini sangat kuat dengan penggunaan database MySQL yang mendukung transaksi ACID, sinkronisasi data yang aman, dan otomasi penjurnalan akuntansi yang presisi.
-
-Namun, ditemukan 1 bug KRITIS terkait duplikasi logika bisnis pada jatah telur pekerja yang dapat menyebabkan kerugian stok inventori secara sistemik, serta ketidakakuratan pada laporan Laba Rugi periode berjalan akibat perhitungan penyusutan yang bersifat akumulatif.
-
---------------------------------------------------------------------------------
-2. DAFTAR MODUL YANG DIUJI
---------------------------------------------------------------------------------
-- Produksi & Log Harian (HDP, Mortalitas, Feed Intake)
-- Manajemen Inventori (Stok Pakan, Obat, Telur, Moving Average)
-- Keuangan & Akuntansi (Jurnal, Buku Besar, Neraca, Laba Rugi, AP/AR)
-- Manajemen Aset (Penyusutan, Pemeliharaan)
-- Warehouse & Distribusi (Mutasi antar kandang)
-- Keamanan & Akses Kontrol (Role-based permissions)
-
---------------------------------------------------------------------------------
-3. TEMUAN UTAMA (KEY FINDINGS)
+II. EVALUASI DETAIL BERDASARKAN MATRIKS AUDIT (A s/d G)
 --------------------------------------------------------------------------------
 
-A. AUDIT RUMUS & OPERASIONAL (STATUS: WARNING)
-- [PASS] HDP & HHP dihitung dengan benar sesuai populasi harian.
-- [FAIL] FCR pada tabel riwayat produksi menggunakan unit kg/butir, berbeda dengan standar industri kg/kg.
-- [WARNING] Estimasi berat telur (62.5g) bersifat statis, berisiko tidak akurat untuk flock yang baru mulai bertelur (pullet).
-
-B. AUDIT ALIRAN DATA & DATABASE (STATUS: PASS)
-- [PASS] Penggunaan Transactions di backend menjamin data tidak parsial.
-- [PASS] Pencegahan stok negatif berfungsi di level database.
-- [PASS] Audit trail (Log mutasi stok & riwayat transaksi) tersimpan dengan baik.
-
-C. AUDIT AKUNTANSI & PEMBUKUAN (STATUS: PASS WITH WARNING)
-- [PASS] Jurnal otomatis tercipta untuk setiap transaksi operasional.
-- [PASS] Neraca Saldo (Trial Balance) seimbang (Debit = Kredit).
-- [FAIL] Perhitungan penyusutan di P&L periode menggunakan angka akumulasi sejak beli, sehingga angka Laba Bersih bulanan tidak valid.
-
-D. AUDIT KEAMANAN (STATUS: PASS)
-- [PASS] Whitelisting kolom pada endpoint sinkronisasi mencegah SQL Injection.
-- [PASS] Role-based access control (RBAC) membatasi fitur sesuai tanggung jawab (Worker vs Admin).
-
 --------------------------------------------------------------------------------
-4. SIMULASI EDGE CASES
+MATRIKS A: CRUD & DATABASE INTEGRITY VALIDATION
 --------------------------------------------------------------------------------
-- Jaringan Putus: Data tersimpan di IndexedDB lokal, namun transaksi API (POST) berisiko tidak terkirim tanpa antrian.
-- Double Submit: Belum ada pencegahan ketat pada UI, risiko duplikasi jurnal jika user menekan tombol simpan berkali-kali.
-- Closing Period: Berhasil memblokir input data pada periode yang sudah dikunci.
+Kami menguji keandalan operasi CRUD, kekokohan batasan database (constraints), serta 
+potensi kondisi balapan (race conditions) dan penanganan transaksi ACID.
+
+Temuan & Analisis Teknis:
+1. Penanganan Penghapusan Relasional (Cascade Safeguards):
+   - Tabel utama transaksi seperti `production_logs` dan `financial_transactions` 
+     dikonfigurasi dengan `ON DELETE CASCADE` yang merujuk ke tabel `houses`. 
+     Namun, sistem tidak mengimplementasikan pengaman relasional pada tabel master seperti 
+     `accounts` dan `inventory_items`. Penghapusan data akun sistem secara langsung dari 
+     frontend API dapat melahirkan "orphaned rows" (baris yatim) pada tabel `journal_lines`, 
+     menyebabkan kegagalan integritas data Buku Besar.
+2. Penanganan Kunci Transaksi (Database Row Locking):
+     Backend router pada `/api/transaction/production` telah menggunakan row-locking 
+     berbasis kueri `FOR UPDATE` saat memeriksa ketersediaan stok pakan sebelum pemotongan. 
+     Ini adalah praktik sangat baik yang mencegah kondisi balapan (race conditions / double-submit 
+     feed inventory depletion). Namun, penguncian serupa tidak diterapkan saat mencatatkan 
+     penjualan telur dinamis di database.
 
 --------------------------------------------------------------------------------
-5. POTENSI RISIKO BISNIS
+MATRIKS B: CROSS-MODULE SYNCHRONIZATION (SINKRONISASI LINTAS MODUL)
 --------------------------------------------------------------------------------
-1. Kerugian Stok: Duplikasi pemotongan jatah telur pekerja akan menyebabkan selisih fisik vs sistem yang signifikan.
-2. Kesalahan Keputusan: Angka FCR yang inkonsisten bisa menyebabkan manajer salah menilai efisiensi pakan.
-3. Pajak & Audit: Laporan Laba Rugi yang tidak akurat (akibat salah hitung penyusutan) berisiko pada pelaporan pajak perusahaan.
+Kami menguji bagaimana perubahan data di satu modul (seperti Gudang/Inventory) 
+berdampak secara real-time dan konsisten pada modul lainnya (seperti Keuangan, Produksi).
+
+Temuan & Analisis Teknis:
+1. Cacat Sinkronisasi Penghapusan Offline (Offline Deletion Leak):
+   - Mekanisme sinkronisasi menggunakan IndexedDB (localforage) terenkripsi di sisi klien. 
+     Saat offline, data dihapus di klien. Namun, saat kembali online, antrean sync 
+     hanya mengirimkan sisa array lokal via POST ke `/api/sync/:key` yang mengeksekusi 
+     `INSERT ... ON DUPLICATE KEY UPDATE` di backend. Record yang dihapus secara offline 
+     tidak pernah terhapus di database MySQL pusat, melahirkan ketidakseimbangan persediaan 
+     dan pengeluaran fiktif.
+2. Sinkronisasi Inventaris vs Penjualan Telur:
+   - Modul Sales memotong persediaan telur secara otomatis di tabel `inventory_items` 
+     melalui `saveSale`. Namun, sinkronisasi pemotongan ini dilakukan secara ad-hoc 
+     di sisi klien melalui React state terlebih dahulu sebelum disinkronkan, yang rentan 
+     terbengkalai jika koneksi internet terputus di tengah jalan saat memproses transaksi.
 
 --------------------------------------------------------------------------------
-6. REKOMENDASI PERBAIKAN & PRIORITAS
+MATRIKS C: NON-EGG SALES & BY-PRODUCT VERIFICATION
 --------------------------------------------------------------------------------
-- PRIORITAS 1 (URGENT): Hapus duplikasi logika jatah telur di frontend App.tsx.
-- PRIORITAS 1 (URGENT): Perbaiki rumus penyusutan pada laporan Laba Rugi agar bersifat periodik (pro-rata).
-- PRIORITAS 2 (HIGH): Standarisasi unit FCR di seluruh modul menjadi kg/kg.
-- PRIORITAS 2 (HIGH): Tambahkan loading state 'isSaving' pada seluruh tombol submit transaksi.
+Verifikasi terhadap alur penjualan non-core peternakan (seperti ayam afkir, pupuk, karung).
+
+Temuan & Analisis Teknis:
+1. Kelumpuhan UI Kategori Non-Telur:
+   - Di halaman `Sales.tsx`, logika deteksi stok memaksa pencarian item dengan tipe 
+     `ItemType.EGG_STOCK` untuk merender ketersediaan barang. Produk sampingan dinamis 
+     (afkir, pupuk) terdaftar sebagai `NON_CORE`, sehingga tombol penjualannya selamanya 
+     terkunci (grayed-out) di layar.
+2. Kebocoran Stok & Buku Kas:
+   - Karena UI terkunci, pengguna dipaksa mencatatkan pemasukan lewat modul pengeluaran/kas 
+     manual. Akibatnya, persediaan pupuk/afkir di gudang tidak pernah terpotong secara otomatis, 
+     dan tidak ada jurnal Harga Pokok Penjualan (HPP) yang terbentuk untuk produk sampingan.
 
 --------------------------------------------------------------------------------
-7. KESIMPULAN AKHIR
+MATRIKS D: PULLET/GROWER & DOC PHASE MANAGEMENT
 --------------------------------------------------------------------------------
-Aplikasi PoultryMind ERP memiliki fondasi yang SANGAT LAYAK untuk operasional enterprise. Dengan memperbaiki 2 temuan kritis di atas, sistem ini akan menjadi salah satu alat manajemen peternakan ayam petelur paling handal dan akurat di kelasnya.
+Evaluasi terhadap pencatatan siklus hidup ayam petelur dari DOC hingga bertelur produktif.
+
+Temuan & Analisis Teknis:
+1. Pelanggaran Standar Akuntansi Biologis IAS 41 / PSAK 69:
+   - ERP PoultryMind memperlakukan semua biaya pembesaran ayam dara (pullet) di bawah 18 minggu 
+     sebagai beban operasional langsung (OPEX). Padahal, standar akuntansi mensyaratkan 
+     seluruh konsumsi pakan, vaksinasi, dan biaya pekerja selama fase non-produktif dikapitalisasi 
+     sebagai Nilai Perolehan Aset Biologis (CAPEX).
+2. Dampak Finansial:
+   - Terjadi distorsi laba bersih yang ekstrem. Pada 4 bulan pertama pemeliharaan DOC baru, 
+     peternakan akan mencatat kerugian operasional yang sangat besar karena beban pakan 
+     membengkak tanpa ada telur yang dihasilkan. Sebaliknya, saat ayam mulai bertelur, margin 
+     terlihat terlalu tinggi karena nilai penyusutan ayam (biological depreciation) tidak dibebankan.
+
+--------------------------------------------------------------------------------
+MATRIKS E: FORMULA & MATHEMATICAL PERFORMANCE AUDITING
+--------------------------------------------------------------------------------
+Kami menguji akurasi matematis seluruh rumus penting yang disajikan di aplikasi.
+
+Temuan & Analisis Teknis:
+1. Formula Hen-Day Production (HDP) Historis Rusak:
+   - Kinerja grafik HDP 14 hari terakhir dihitung menggunakan populasi aktif hari ini sebagai 
+     pembagi nilai produksi telur masa lalu. Hal ini mendistorsi keakuratan grafik saat ada 
+     kematian ayam (mortality). Kinerja masa lalu diposisikan seolah-olah sangat produktif 
+     karena pembaginya mengecil secara keliru.
+2. Formula Hen-Housed Production (HHP) Salah Logika:
+   - Sistem menjumlahkan persentase HHP kumulatif secara langsung. Angka ribuan persen (misal 
+     8.500%) ditampilkan di kartu kinerja utama harian. Hal ini sangat tidak lazim dan 
+     membingungkan bagi standar industri poultry internasional yang membatasi HHP harian 
+     maksimal 100% atau menyajikan HHP kumulatif dalam metrik "Butir Telur per Ayam Dara Masuk".
+3. Harga Pokok Produksi (HPP) Telur Terdistorsi:
+   - Dalam `getFlockAnalytics`, biaya pakan dihitung berdasarkan kuantitas terpakai dikalikan 
+     dengan `item.lastPrice` (harga pembelian terakhir). Logika ini mengabaikan prinsip 
+     Moving Average. Jika harga pakan berfluktuasi naik tajam di akhir bulan, biaya pemakaian 
+     pakan bulan-bulan lalu dihitung membengkak secara tidak adil di dashboard.
+
+--------------------------------------------------------------------------------
+MATRIKS F: ACCOUNTING & DOUBLE-ENTRY LEDGER AUDITING
+--------------------------------------------------------------------------------
+Audit terhadap bagan akun, neraca saldo, proses tutup buku, dan integritas jurnal.
+
+Temuan & Analisis Teknis:
+1. Inkonsistensi Bagan Akun (COA Code Mismatch):
+   - Frontend mendefinisikan kode akun 4 digit datar (1101, 1111), sedangkan backend 
+     menghasilkan bagan akun profesional hierarkis dengan format tanda hubung (1-1110, 1-1301). 
+     Hal ini memicu kegagalan pemetaan neraca saldo dan buku besar.
+2. Bypass Kunci Periode Akuntansi:
+   - Tidak ada validasi penguncian tanggal transaksi (`period_locks`) pada backend routes 
+     `sync.ts`. Transaksi pada periode yang sudah ditutup masih bisa disisipkan atau 
+     dihapus secara paksa melalui panggilan API langsung.
+3. Jurnal Gantung Transaksi Telur Gratis:
+   - Pengeluaran telur gratis tidak membentuk entri jurnal ke akun `Persediaan Telur` 
+     (1-1303), mengakibatkan ketidakseimbangan permanen antara nilai buku persediaan 
+     pada neraca saldo dengan kuantitas fisik riil di gudang.
+
+--------------------------------------------------------------------------------
+MATRIKS G: DASHBOARD & ANALYTICS CORRECTNESS
+--------------------------------------------------------------------------------
+Evaluasi terhadap keselarasan angka dashboard dengan laporan yang diekspor ke Excel.
+
+Temuan & Analisis Teknis:
+1. Ketidakcocokan Laba Bersih Excel vs Dashboard:
+   - Laba bersih pada dashboard akrual menggunakan kalkulasi pemakaian bahan (`totalUsageCost`), 
+     sedangkan pada berkas ekspor Excel (`Laba Rugi` sheet) laba bersih dihitung berdasarkan 
+     total pengeluaran kas pembelian bahan baku (`totalBahan`). Hal ini menciptakan dua angka 
+     laba bersih yang berbeda untuk periode yang sama, merusak kredibilitas pelaporan ERP.
+2. Potensi "Out of Memory" Ekspor Excel:
+   - Fungsi `handleExportExcel` di `Finance.tsx` memuat seluruh data transaksi keuangan 
+     historis secara serentak ke dalam memori browser sebelum memproses berkas ExcelJS. 
+     Untuk skala enterprise dengan ratusan ribu catatan transaksi, proses ini akan memicu 
+     browser membeku (crash/out of memory).
+
+--------------------------------------------------------------------------------
+III. SEVERITY-BASED RISK MATRIX (MATRIKS RISIKO & TEMUAN)
+--------------------------------------------------------------------------------
+
+Berikut adalah matriks temuan berdasarkan tingkat keparahan risiko fungsional dan finansial:
+
++---------+----------------------------+-------------------------+--------------------+
+| ID      | Temuan Bug / Warning       | Dampak Finansial/Sistem | Tingkat Keparahan  |
++---------+----------------------------+-------------------------+--------------------+
+| BUG-01  | COA Code Mismatch          | GL & Neraca Saldo Rusak | CRITICAL           |
+| BUG-02  | Sync Leak Hapus Offline    | Zombie data di backend  | CRITICAL           |
+| BUG-03  | Bypass Kunci Periode Jurnal| Kerentanan Fraud/Koreksi| HIGH               |
+| BUG-04  | Kategori Non-Telur Lumpuh  | Kehilangan Transaksi    | HIGH               |
+| BUG-05  | Bocor Stok Produk Sampingan| Selisih Stokopname      | HIGH               |
+| BUG-06  | Jurnal Gantung Telur Gratis| Nilai Aset Overstated   | HIGH               |
+| BUG-07  | Distorsi HDP Dashboard     | Info Kinerja Menyesatkan| MEDIUM             |
+| BUG-08  | Akumulasi Persentase HHP   | Tampilan KPI Rusak      | MEDIUM             |
+| BUG-09  | FCR Bleed Antar Generasi   | Salah Analisis Efisiensi| MEDIUM             |
+| BUG-10  | HPP Menggunakan Last Price | Laporan Laba Rugi Bias  | HIGH               |
+| WAR-01  | Pengabaian Kepatuhan IAS 41| Beban OPEX Bulan 1-4    | HIGH               |
+| WAR-04  | Batalkan Transaksi = Nol   | Kerusakan Jejak Audit   | MEDIUM             |
++---------+----------------------------+-------------------------+--------------------+
+
+--------------------------------------------------------------------------------
+IV. ROADMAP REKAYASA & TINDAKAN PERBAIKAN STRATEGIS
+--------------------------------------------------------------------------------
+
+Untuk mencapai status "PRODUCTION-READY", tim pengembang wajib melaksanakan langkah-langkah 
+perbaikan teknis berikut secara bertahap:
+
+Fase 1: Perbaikan Kritis Basis Data & Jurnal (Estimasi: 3-5 Hari Kerja)
+1. Penyelarasan Bagan Akun (COA Aligning):
+   - Ubah `DEFAULT_ACCOUNTS` di frontend (`src/types.ts`) agar menggunakan kode akun 
+     akuntansi yang persis sama dengan yang dihasilkan di `backend/src/config/initDb.ts` 
+     (menggunakan prefix tanda hubung seperti 1-1301).
+2. Penambalan Cacat Hapus Offline (Offline Sync Fix):
+   - Refaktor route `POST /api/sync/:key` di backend. Sebelum melakukan iterasi 
+     `INSERT ... ON DUPLICATE KEY UPDATE`, kueri harus mendeteksi apakah ada ID di database 
+     yang tidak ada dalam array kiriman client untuk lingkup houseId terkait, lalu lakukan 
+     penghapusan (DELETE) secara aman untuk merekonsiliasi penghapusan offline.
+3. Proteksi Kunci Periode di Sisi Server (Server-Side Period Lock):
+   - Tambahkan middleware pemeriksaan tabel `period_locks` di backend (`sync.ts`) pada route 
+     penulisan dan penghapusan data. Tolak transaksi jika tanggal transaksi masuk dalam 
+     rentang bulan yang sudah dikunci oleh proses Tutup Buku.
+
+Fase 2: Perbaikan Fungsional Modul Penjualan & Stok (Estimasi: 2-3 Hari Kerja)
+1. Pengaktifan Kategori Non-Telur (Dynamic Non-Egg Sales):
+   - Refaktor logika rending produk di `Sales.tsx` agar tidak membatasi tipe pencarian stok 
+     hanya pada `ItemType.EGG_STOCK`. Dukung tipe item `NON_CORE` agar tombol kategori 
+     sampingan aktif dan stoknya dapat terpotong secara benar melalui `saveSale`.
+2. Akuntansi Penjualan Telur Gratis:
+   - Modifikasi fungsi `saveSale` agar ketika transaksi berupa barang gratis (`isFree = true`), 
+     sistem tetap memicu `addJournalEntry` dengan mendebit akun Beban Pemberian Gratis 
+     (Beban Promosi / CSR) dan mengkredit akun Persediaan Telur senilai Harga Pokok Produksi 
+     (HPP) berjalan.
+
+Fase 3: Pembenahan Formula & Standar Akuntansi Poultry (Estimasi: 4-6 Hari Kerja)
+1. Perbaikan Metrik HDP & HHP:
+   - Simpan populasi harian (historical daily population count) di tabel tersendiri atau 
+     hitung mundur menggunakan data mutasi ayam (`population_mutations`) untuk membagi angka 
+     produksi telur secara historis.
+   - Ubah HHP menjadi nilai persentase harian yang benar atau tampilkan metrik "Butir Telur 
+     per Ayam Dara Masuk" (Eggs per Hen Housed) kumulatif berbentuk angka bulat, bukan persentase 
+     akumulatif yang tidak valid.
+2. Implementasi Akuntansi Biologis IAS 41 / PSAK 69:
+   - Buat modul "Grower/Pullet Rearing Stage" yang secara otomatis mengumpulkan biaya pakan, 
+     pekerja, dan obat ayam sebelum masa produksi, lalu lakukan jurnal transfer kapitalisasi 
+     ke Aset Biologis Ayam Layer (`acc-ternak`) saat ayam pertama kali bertelur. Depresiasikan 
+     aset tersebut secara pro-rata bulanan.
 
 ================================================================================
-DOKUMEN INI ADALAH HASIL AUDIT RESMI QA.
+                    AKHIR DARI LAPORAN ENTERPRISE QA AUDIT
 ================================================================================

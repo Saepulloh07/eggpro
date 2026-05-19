@@ -45,11 +45,14 @@ export default function Sales() {
   const currentPrice = masterPrices.find(p => p.name === activeCategory || p.id === activeCategory)?.price || 0;
 
   // ── Egg Stock Lookup ─────────────────────────────────────────────────────────
-  // Find the EGG_STOCK inventory item for the currently selected category
-  const eggStockItem = inventory.find(
-    i => i.type === ItemType.EGG_STOCK && i.eggCategory === activeCategory && i.houseId === activeHouse?.id
+  // Find the stock inventory item for the currently selected category
+  const activeItemStock = inventory.find(
+    i => i.houseId === activeHouse?.id && (
+      (i.type === ItemType.EGG_STOCK && i.eggCategory === activeCategory) ||
+      (i.type !== ItemType.EGG_STOCK && i.name === activeCategory)
+    )
   );
-  const availableStock = eggStockItem ? eggStockItem.quantity : (activeCategory !== 'NON_EGG' ? 0 : null);
+  const availableStock = activeItemStock ? activeItemStock.quantity : (activeCategory !== 'NON_EGG' ? 0 : null);
   const isOverStock = availableStock !== null && quantity > availableStock;
 
   const totalPrice = isFree ? 0 : quantity * currentPrice;
@@ -185,9 +188,12 @@ export default function Sales() {
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-3">Pilih Kategori Produk</label>
                   <div className="grid grid-cols-2 gap-3">
                     {masterPrices.filter(p => p.id !== 'NON_EGG').map((p) => {
-                      // Match by name (e.g. "Remban") instead of ID (e.g. "BM") to align with Production log & Inventory
+                      // Match by name (e.g. "Remban" or "Ayam Afkir")
                       const catStock = inventory.find(
-                        i => i.type === ItemType.EGG_STOCK && i.eggCategory === p.name && i.houseId === activeHouse?.id
+                        i => i.houseId === activeHouse?.id && (
+                          (i.type === ItemType.EGG_STOCK && i.eggCategory === p.name) ||
+                          (i.type !== ItemType.EGG_STOCK && i.name === p.name)
+                        )
                       )?.quantity || 0;
                       return (
                         <button 

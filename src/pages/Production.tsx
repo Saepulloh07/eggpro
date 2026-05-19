@@ -139,14 +139,14 @@ export default function Production() {
   const hhp = useMemo(() => {
     if (!activeBatch || activeBatch.initialCount === 0) return 0;
     // Current day's HHP portion + historical
-    return getHHP(activeHouse?.id || '', activeBatch.initialCount) + (eggCount / activeBatch.initialCount) * 100;
+    return getHHP(activeHouse?.id || '', activeBatch.initialCount, activeBatch.arrivalDate) + (eggCount / activeBatch.initialCount);
   }, [eggCount, activeBatch, activeHouse, getHHP]);
 
 
   const standardHDP = getStrainStandardHDP(age.weeks);
 
   // Cumulative FCR
-  const cumulativeFCR = getCumulativeFCR(activeHouse?.id || '');
+  const cumulativeFCR = getCumulativeFCR(activeHouse?.id || '', activeBatch?.arrivalDate);
 
   // Feed intake per bird (grams)
   const feedIntakePerBird = useMemo(() => {
@@ -360,11 +360,11 @@ export default function Production() {
           hhp >= standardHDP ? 'bg-emerald-50 border-emerald-200' : hhp > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'
         )}>
           <TrendingUp size={40} className="absolute right-2 top-2 opacity-[0.07] hidden sm:block" />
-          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">HHP Saat Ini</p>
+          <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">HHP Kumulatif</p>
           <p className={cn('text-xl lg:text-2xl font-black italic', hhp >= standardHDP ? 'text-emerald-600' : 'text-amber-600')}>
-            {hhp.toFixed(1)}%
+            {hhp.toFixed(2)}
           </p>
-          <p className="text-[9px] text-slate-400 font-bold mt-1">Total thd Populasi Awal</p>
+          <p className="text-[9px] text-slate-400 font-bold mt-1">Butir / Ekor (Awal)</p>
         </div>
 
         {/* FCR Live */}

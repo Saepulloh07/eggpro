@@ -135,7 +135,13 @@ export default function Dashboard() {
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
         const log = houseLogs.find(l => l.date === dateStr);
-        const hdp = log && currentCount > 0 ? (log.eggCount / currentCount) * 100 : null;
+        
+        // Calculate historical population
+        const historicalPop = activeBatch 
+          ? activeBatch.initialCount - mutations.filter(m => m.batchId === activeBatch.id && m.date <= dateStr).reduce((sum, m) => sum + m.quantity, 0)
+          : currentCount;
+
+        const hdp = log && historicalPop > 0 ? (log.eggCount / historicalPop) * 100 : null;
         result.push({
           name: d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
           produksi: log ? (log.totalButir ?? 0) : 0,
@@ -238,8 +244,8 @@ export default function Dashboard() {
 
   // ── Financial Analytics (Centralized HPP & P&L) ──────────────────────────
   const analytics = useMemo(() => 
-    getFlockAnalytics(activeHouse?.id || '', currentCount),
-    [getFlockAnalytics, activeHouse, currentCount]
+    getFlockAnalytics(activeHouse?.id || '', currentCount, activeBatch?.arrivalDate),
+    [getFlockAnalytics, activeHouse, currentCount, activeBatch?.arrivalDate]
   );
   
   const netPL = analytics.netPL || 0;
