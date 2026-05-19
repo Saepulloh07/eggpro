@@ -42,7 +42,8 @@ export default function Sales() {
 
   // Load master prices from FarmSettings
   const masterPrices = farmSettings.masterPrices || [];
-  const currentPrice = masterPrices.find(p => p.name === activeCategory || p.id === activeCategory)?.price || 0;
+  const selectedPriceObj = masterPrices.find(p => p.name === activeCategory || p.id === activeCategory);
+  const currentPrice = selectedPriceObj?.price || 0;
 
   // ── Egg Stock Lookup ─────────────────────────────────────────────────────────
   // Find the stock inventory item for the currently selected category
@@ -52,8 +53,10 @@ export default function Sales() {
       (i.type !== ItemType.EGG_STOCK && i.name === activeCategory)
     )
   );
-  const availableStock = activeItemStock ? activeItemStock.quantity : (activeCategory !== 'NON_EGG' ? 0 : null);
-  const isOverStock = availableStock !== null && quantity > availableStock;
+  const availableStock = activeItemStock ? activeItemStock.quantity : 0;
+  const isOverStock = quantity > availableStock;
+
+  const activePriceUnit = selectedPriceObj?.unit || activeItemStock?.unit || (selectedPriceObj?.type === 'non-egg' ? 'kg' : 'butir');
 
   const totalPrice = isFree ? 0 : quantity * currentPrice;
 
@@ -92,7 +95,7 @@ export default function Sales() {
     if (isOverStock) {
       Swal.fire({
         title: 'Stok Tidak Cukup!',
-        html: `<div class="text-sm"><p>Stok <b>${activeCategory}</b> tersedia: <b>${availableStock?.toLocaleString()} butir</b></p><p>Jumlah yang diinput: <b>${quantity.toLocaleString()} butir</b></p><p class="text-rose-600 mt-2 font-black uppercase tracking-widest italic">⚠ Melebihi stok tersedia (${availableStock?.toLocaleString()} butir)</p></div>`,
+        html: `<div class="text-sm"><p>Stok <b>${activeCategory}</b> tersedia: <b>${availableStock?.toLocaleString()} ${activePriceUnit}</b></p><p>Jumlah yang diinput: <b>${quantity.toLocaleString()} ${activePriceUnit}</b></p><p class="text-rose-600 mt-2 font-black uppercase tracking-widest italic">⚠ Melebihi stok tersedia (${availableStock?.toLocaleString()} ${activePriceUnit})</p></div>`,
         icon: 'error',
         confirmButtonColor: '#0f172a',
       });
@@ -151,7 +154,7 @@ export default function Sales() {
               customer: customerName.trim() || 'Umum'
           }, selectedAccountId);
 
-          Swal.fire({ title: 'Transaksi Berhasil!', text: `Penjualan ${quantity.toLocaleString()} butir ${activeCategory} berhasil dicatat.`, icon: 'success', confirmButtonColor: '#0f172a' });
+          Swal.fire({ title: 'Transaksi Berhasil!', text: `Penjualan ${quantity.toLocaleString()} ${activePriceUnit} ${activeCategory} berhasil dicatat.`, icon: 'success', confirmButtonColor: '#0f172a' });
           setQuantity(0);
           setIsFree(false);
           setCustomerName('');
@@ -186,49 +189,85 @@ export default function Sales() {
               <div className="space-y-6">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-3">Pilih Kategori Produk</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {masterPrices.filter(p => p.id !== 'NON_EGG').map((p) => {
-                      // Match by name (e.g. "Remban" or "Ayam Afkir")
-                      const catStock = inventory.find(
-                        i => i.houseId === activeHouse?.id && (
-                          (i.type === ItemType.EGG_STOCK && i.eggCategory === p.name) ||
-                          (i.type !== ItemType.EGG_STOCK && i.name === p.name)
-                        )
-                      )?.quantity || 0;
-                      return (
-                        <button 
-                          key={p.id}
-                          onClick={() => setActiveCategory(p.name)}
-                          className={cn(
-                            "p-3 lg:p-4 rounded-sm border text-left transition-all relative overflow-hidden",
-                            activeCategory === p.name 
-                              ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200" 
-                              : (catStock > 0 ? "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100" : "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed grayscale")
-                          )}
-                        >
-                          <div className="font-bold text-xs uppercase tracking-tight">{p.name}</div>
-                          <div className={cn("text-[9px] uppercase font-bold opacity-60 italic", activeCategory === p.name ? "text-amber-500" : "text-slate-400")}>
-                            {getEggCategoryRange(p.name as EggCategory)}
-                          </div>
-                          <div className={cn(
-                            "absolute bottom-2 right-3 text-[10px] font-black italic",
-                            catStock > 0 ? (activeCategory === p.name ? "text-white/40" : "text-slate-500") : "text-rose-600"
-                          )}>
-                            {catStock.toLocaleString()}
-                          </div>
-                        </button>
-                      );
-                    })}
-                    <button 
-                        onClick={() => setActiveCategory('NON_EGG')}
-                        className={cn(
-                          "p-3 lg:p-4 rounded-sm border text-left transition-all flex items-center space-x-2 bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100",
-                          activeCategory === 'NON_EGG' && "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200"
-                        )}
-                    >
-                        <Layers size={14} className={activeCategory === 'NON_EGG' ? "text-amber-500" : "text-slate-400"} />
-                        <span className="font-bold text-xs tracking-tight uppercase">Limbah/Karung</span>
-                    </button>
+                  
+                  {/* Category 1: PRODUK UTAMA (TELUR) */}
+                  <div className="mb-4">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-amber-500 mb-2 italic">🥚 Produk Utama (Telur)</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {masterPrices.filter(p => p.type === 'telur' || (!p.type && p.id !== 'NON_EGG')).map((p) => {
+                        const catStock = inventory.find(
+                          i => i.houseId === activeHouse?.id && (
+                            (i.type === ItemType.EGG_STOCK && i.eggCategory === p.name) ||
+                            (i.type !== ItemType.EGG_STOCK && i.name === p.name)
+                          )
+                        );
+                        const stockQty = catStock ? catStock.quantity : 0;
+                        const hasStock = stockQty > 0;
+                        return (
+                          <button 
+                            key={p.id}
+                            onClick={() => setActiveCategory(p.name)}
+                            className={cn(
+                              "p-3 lg:p-4 rounded-sm border text-left transition-all relative overflow-hidden",
+                              activeCategory === p.name 
+                                ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200" 
+                                : (hasStock ? "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100" : "bg-slate-100 border-slate-200 text-slate-400 grayscale")
+                            )}
+                          >
+                            <div className="font-bold text-xs uppercase tracking-tight">{p.name}</div>
+                            <div className={cn("text-[9px] uppercase font-bold opacity-60 italic", activeCategory === p.name ? "text-amber-500" : "text-slate-400")}>
+                              {getEggCategoryRange(p.name as EggCategory)}
+                            </div>
+                            <div className={cn(
+                              "absolute bottom-2 right-3 text-[10px] font-black italic",
+                              hasStock ? (activeCategory === p.name ? "text-white/40" : "text-slate-500") : "text-rose-600"
+                            )}>
+                              {stockQty.toLocaleString()} {p.unit || catStock?.unit || 'butir'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Category 2: LIMBAH & LAIN-LAIN (NON-EGG) */}
+                  <div className="mt-6">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-2 italic">📦 Limbah & Produk Non-Egg</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {masterPrices.filter(p => p.type === 'non-egg' || p.id === 'NON_EGG').map((p) => {
+                        const catStock = inventory.find(
+                          i => i.houseId === activeHouse?.id && (
+                            (i.type === ItemType.EGG_STOCK && i.eggCategory === p.name) ||
+                            (i.type !== ItemType.EGG_STOCK && i.name === p.name)
+                          )
+                        );
+                        const stockQty = catStock ? catStock.quantity : 0;
+                        const hasStock = stockQty > 0;
+                        return (
+                          <button 
+                            key={p.id}
+                            onClick={() => setActiveCategory(p.name)}
+                            className={cn(
+                              "p-3 lg:p-4 rounded-sm border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[68px]",
+                              activeCategory === p.name 
+                                ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200" 
+                                : (hasStock ? "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100" : "bg-slate-100 border-slate-200 text-slate-400 grayscale")
+                            )}
+                          >
+                            <div className="font-bold text-xs uppercase tracking-tight flex items-center gap-1.5">
+                              <Layers size={11} className={activeCategory === p.name ? "text-amber-500" : "text-slate-400"} />
+                              {p.name}
+                            </div>
+                            <div className={cn(
+                              "text-[10px] font-black italic mt-2 self-end",
+                              hasStock ? (activeCategory === p.name ? "text-white/40" : "text-slate-500") : "text-rose-600"
+                            )}>
+                              {stockQty.toLocaleString()} {p.unit || catStock?.unit || 'kg'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -267,11 +306,11 @@ export default function Sales() {
                 {/* Quantity input with stock badge */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Jumlah (Butir)</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Jumlah ({activePriceUnit})</label>
                     {availableStock !== null && (
                       <span className={cn('text-[9px] font-black uppercase tracking-widest px-2 py-0.5 border rounded-sm',
                         isOverStock ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200')}>
-                        Stok: {availableStock.toLocaleString()} butir
+                        Stok: {availableStock.toLocaleString()} {activePriceUnit}
                       </span>
                     )}
                   </div>
@@ -286,11 +325,11 @@ export default function Sales() {
                         isOverStock ? "border-rose-400 focus:border-rose-500 bg-rose-50" : "border-slate-200 focus:border-amber-500"
                       )}
                     />
-                    <span className="absolute right-4 lg:right-6 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">butir</span>
+                    <span className="absolute right-4 lg:right-6 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">{activePriceUnit}</span>
                   </div>
                   {isOverStock && (
                     <p className="text-[10px] text-rose-600 font-bold mt-1 flex items-center gap-1">
-                      ⚠ Melebihi stok tersedia ({availableStock?.toLocaleString()} butir)
+                      ⚠ Melebihi stok tersedia ({availableStock?.toLocaleString()} {activePriceUnit})
                     </p>
                   )}
                 </div>

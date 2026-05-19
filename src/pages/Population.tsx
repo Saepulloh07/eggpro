@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, Plus, ArrowRightLeft, Skull, ShoppingCart,
   Calendar, Trash2, Search, TrendingUp, TrendingDown,
-  History, Info, ChevronRight, Download
+  History, Info, ChevronRight, Download, Wheat
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Swal from 'sweetalert2';
@@ -15,7 +15,8 @@ import { cn } from '../lib/utils';
 import Modal from '../components/Modal';
 import { useHouse } from '../HouseContext';
 import { useFlock } from '../FlockContext';
-import { MutationType, type PopulationMutation } from '../types';
+import { useGlobalData } from '../GlobalContext';
+import { MutationType, type PopulationMutation, StockMutationType, ItemType } from '../types';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -49,11 +50,26 @@ const MUTATION_TYPE_CONFIG = {
 export default function Population() {
   const { activeHouse, houses } = useHouse();
   const { flocks, mutations, addMutation, deleteMutation, getActiveFlockByHouse } = useFlock();
+  const { inventory, updateInventory, createStockMutation } = useGlobalData();
   const activeFlock = getActiveFlockByHouse(activeHouse?.id || '');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<MutationType | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+
+  const [isPulletModalOpen, setIsPulletModalOpen] = useState(false);
+  const [pulletForm, setPulletForm] = useState({
+    date: new Date().toISOString().split('T')[0],
+    feedItemId: '',
+    count: 0,
+    notes: ''
+  });
+
+  // Filter feed items for active house warehouse
+  const feedItems = useMemo(() =>
+    inventory.filter(i => (i.type === ItemType.FINISHED_FEED || i.type === ItemType.RAW_MATERIAL) && i.houseId === activeHouse?.id),
+    [inventory, activeHouse]
+  );
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -112,6 +128,48 @@ export default function Population() {
     Swal.fire({ title: 'Tersimpan!', icon: 'success', timer: 1500, showConfirmButton: false });
   };
 
+  const handleSavePulletFeed = () => {
+    const feedItem = inventory.find(i => i.id === pulletForm.feedItemId);
+    if (!feedItem) {
+      Swal.fire({ title: 'Data Tidak Lengkap', text: 'Silakan pilih jenis pakan terlebih dahulu.', icon: 'warning', confirmButtonColor: '#0f172a' });
+      return;
+    }
+    if (pulletForm.count <= 0) {
+      Swal.fire({ title: 'Jumlah Tidak Valid', text: 'Jumlah pakan yang diberikan harus lebih dari 0 kg.', icon: 'warning', confirmButtonColor: '#0f172a' });
+      return;
+    }
+    if (feedItem.quantity < pulletForm.count) {
+      Swal.fire({
+        title: 'Stok Tidak Cukup!',
+        text: `Stok ${feedItem.name} saat ini hanya ${feedItem.quantity} kg, dibutuhkan ${pulletForm.count} kg.`,
+        icon: 'error',
+        confirmButtonColor: '#0f172a'
+      });
+      return;
+    }
+
+    // Process deduction and stock mutation record
+    updateInventory(feedItem.id, -pulletForm.count);
+    createStockMutation({
+      date: pulletForm.date,
+      itemId: feedItem.id,
+      type: StockMutationType.USAGE,
+      quantity: pulletForm.count,
+      unitCost: feedItem.lastPrice || 0,
+      sourceLocation: activeHouse?.id || '',
+      reference: `PULLET-FEED-${Date.now()}`,
+      notes: `Pemberian Pakan Pullet: ${pulletForm.notes || '-'}`
+    });
+
+    setIsPulletModalOpen(false);
+    Swal.fire({
+      title: 'Berhasil!',
+      text: `Pemberian pakan ${feedItem.name} sebanyak ${pulletForm.count} kg berhasil dicatat.`,
+      icon: 'success',
+      confirmButtonColor: '#0f172a'
+    });
+  };
+
   const handleDelete = (id: string) => {
     Swal.fire({
       title: 'Hapus Mutasi?',
@@ -145,7 +203,7 @@ export default function Population() {
       </div>
 
       {/* Action Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
         {Object.entries(MUTATION_TYPE_CONFIG).map(([type, config]) => {
           const Icon = config.icon;
           return (
@@ -162,6 +220,29 @@ export default function Population() {
             </button>
           );
         })}
+
+        {/* 5th Card: Pemberian Pakan Pullet */}
+        <button
+          onClick={() => {
+            setPulletForm({
+              date: new Date().toISOString().split('T')[0],
+              feedItemId: feedItems[0]?.id || '',
+              count: 0,
+              notes: ''
+            });
+            setIsPulletModalOpen(true);
+          }}
+          className="group bg-white border border-slate-200 p-4 hover:border-slate-900 transition-all text-left relative overflow-hidden"
+        >
+          <div className="w-10 h-10 rounded-sm flex items-center justify-center mb-3 bg-amber-50 border-amber-200 text-amber-600 transition-colors group-hover:bg-amber-900 group-hover:text-amber-300">
+            <Wheat size={20} />
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-900">Pakan Pullet</p>
+          <p className="text-[8px] text-slate-400 mt-1 font-bold leading-tight">Pemberian pakan pullet harian yang memotong stok gudang.</p>
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Plus size={12} className="text-slate-300" />
+          </div>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -374,6 +455,51 @@ export default function Population() {
           <button onClick={handleSave}
             className="w-full bg-slate-900 text-white py-3 font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
             Simpan Mutasi
+          </button>
+        </div>
+      </Modal>
+
+      {/* Pullet Feed Modal */}
+      <Modal
+        isOpen={isPulletModalOpen}
+        onClose={() => setIsPulletModalOpen(false)}
+        title="Catat Pemberian Pakan Pullet"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Tanggal</label>
+              <input type="date" value={pulletForm.date} onChange={e => setPulletForm({ ...pulletForm, date: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 px-3 py-2 text-sm font-bold focus:outline-none focus:border-amber-500" />
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Jumlah (Kg)</label>
+              <input type="number" value={pulletForm.count || ''} onChange={e => setPulletForm({ ...pulletForm, count: Number(e.target.value) })}
+                className="w-full bg-slate-50 border border-slate-200 px-3 py-2 text-sm font-bold focus:outline-none focus:border-amber-500" />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Pilih Pakan Gudang</label>
+            <select value={pulletForm.feedItemId} onChange={e => setPulletForm({ ...pulletForm, feedItemId: e.target.value })}
+              className="w-full bg-amber-50 border border-amber-200 px-3 py-2 text-sm font-bold text-amber-900 focus:outline-none focus:border-amber-500">
+              <option value="">Pilih Jenis Pakan...</option>
+              {feedItems.map(item => (
+                <option key={item.id} value={item.id}>{item.name} (Stok: {item.quantity} {item.unit})</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Catatan</label>
+            <textarea value={pulletForm.notes} onChange={e => setPulletForm({ ...pulletForm, notes: e.target.value })} rows={3}
+              placeholder="Cth: Pemberian pakan grower/pullet pagi hari..."
+              className="w-full bg-slate-50 border border-slate-200 px-3 py-2 text-sm font-medium focus:outline-none focus:border-amber-500 resize-none" />
+          </div>
+
+          <button onClick={handleSavePulletFeed}
+            className="w-full bg-slate-900 text-white py-3 font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
+            Simpan Pemberian Pakan
           </button>
         </div>
       </Modal>

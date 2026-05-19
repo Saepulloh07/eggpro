@@ -1,0 +1,50 @@
+=============================================================================
+ENTERPRISE QUALITY ASSURANCE (QA) & SYSTEM AUDIT REPORT - POULTRY ERP
+Tanggal Audit   : 19 Mei 2026 (Post-Fix Phase 1-3)
+Auditor         : Senior QA Engineer & Poultry System Analyst
+Status Sistem   : B (BETA - SIAP UAT DENGAN CATATAN)
+=============================================================================
+
+1. EXECUTIVE SUMMARY
+Aplikasi Poultry ERP telah mengalami peningkatan stabilitas yang sangat signifikan setelah implementasi "Hardening Phase 1-3". Masalah kebocoran data offline (zombie records), perhitungan penyusutan yang salah, FCR bleed antar-flock, dan absennya fitur sinkronisasi vaksinasi telah diatasi. Sistem kini memiliki pengamanan tingkat lanjut berupa "Period Lock" di level server.
+Meskipun sistem inti (Layer Production & Finance) sudah siap untuk production, sistem ini belum memiliki modul "Manajemen Pullet/DOC" khusus.
+
+2. AUDIT CRUD & DATABASE (STATUS: PASS)
+- Form Input & Modal: Berjalan sempurna. 'isSaving' state mencegah double submit.
+- Integrasi DB & Sync: PASS. Seluruh fitur (termasuk Vaksinasi dan Settings) kini persisten ke DB MySQL melalui `syncRecord`.
+- Soft/Hard Delete: PASS. Implementasi `sync_delete_queue` telah menutup celah "zombie records" saat terjadi penghapusan di mode offline.
+- Keamanan Transaksi: PASS. Middleware 'isPeriodLocked' aktif di backend, mencegah bypass API untuk memodifikasi laporan yang sudah di-closing.
+
+3. AUDIT SINKRONISASI ANTAR MODUL (STATUS: PASS)
+- Gudang <-> Penjualan: PASS. Penjualan otomatis memotong stok `EGG_STOCK` maupun `NON_CORE`.
+- Penjualan <-> Akuntansi: PASS. Menjurnal otomatis ke `acc-penjualan-telur`, `acc-penjualan-afkir`, atau `acc-penjualan-kotoran`. Pemberian telur gratis menjurnal ke `Beban Promosi`.
+- Aset <-> Penyusutan: PASS. Disinkronkan dengan entri jurnal otomatis saat modul Closing Keuangan dijalankan (mempertimbangkan Quantity aset).
+- Race Condition / Multi-User: WARNING. Sinkronisasi menggunakan pendekatan "Last-Write-Wins" (ON DUPLICATE KEY UPDATE). Dalam skenario offline ekstrem, konflik edit dari dua device berbeda akan ditimpa oleh device yang melakukan sync terakhir.
+
+4. AUDIT PENJUALAN NON-TELUR (STATUS: PASS)
+- Sistem kini sepenuhnya mendukung penjualan Limbah, Kotoran, Karung Bekas, dan Ayam Afkir. 
+- Stok ditarik dinamis dari tipe `NON_CORE` atau `FEED_STOCK` di master inventory.
+- Jurnal Pendapatan secara otomatis dikategorikan berdasarkan kata kunci produk (misal: "Afkir" atau "Limbah/Kotoran").
+- Kekurangan: Fitur Retur Penjualan (Sales Return) belum diimplementasikan secara spesifik.
+
+5. AUDIT MANAJEMEN PAKAN PULLET / DOC (STATUS: FAIL / MISSING FEATURE)
+- Sistem dirancang murni untuk "Ayam Petelur Fase Layer Produksi".
+- Tidak ada dukungan untuk mencatat formula pakan pullet yang berbeda, kurva berat badan DOC, jadwal potong paruh, atau akumulasi modal HPP Pullet yang ditransfer ke kandang Layer.
+- Seluruh DOC/Pullet yang dimasukkan ke kandang saat ini dianggap langsung sebagai 'FlockBatch' dengan modal tetap (Initial Capital).
+
+6. AUDIT RUMUS & PERHITUNGAN (STATUS: PASS)
+- HHP (Hen Housed Production): PASS. Telah diperbaiki menjadi (Total Telur Kumulatif / Populasi Awal), tidak lagi dikalikan 100 secara membabi buta.
+- HDP (Hen Day Production): PASS. Grafik HDP historis kini memperhitungkan laju mortalitas harian (menggunakan pengurangan populasi dinamis), sehingga kurva tidak terdistorsi.
+- FCR (Feed Conversion Ratio): PASS. Logika `getFlockAnalytics` dan `getCumulativeFCR` telah diproteksi menggunakan filter `arrivalDate` agar tidak terpengaruh oleh data batch kandang periode sebelumnya.
+- Penyusutan (Depreciation): PASS. Menghitung `(Purchase Price * Quantity - Salvage Value) / Umur Ekonomis`.
+
+7. AUDIT AKUNTANSI & PEMBUKUAN (STATUS: PASS)
+- Buku Besar & Neraca Saldo: Berjalan real-time. Saldo `Debit` dan `Credit` konsisten (Balance).
+- Multi-Rekening: Mendukung alokasi Kas Kandang secara independen per entitas kandang.
+- Closing Period: PASS. Berhasil melock data transaksi di frontend maupun backend.
+
+8. AUDIT DASHBOARD & ANALYTICS (STATUS: PASS)
+- Dashboard berhasil merender peringatan stok, batas abnormalitas telur pecah, dan metrik krusial dengan tepat waktu tanpa lag berlebihan.
+
+KESIMPULAN:
+Aplikasi sudah SANGAT LAYAK digunakan untuk operasional peternakan (Layer Farm Phase). Skala prioritas selanjutnya adalah mengimplementasikan modul DOC/Pullet jika bisnis peternakan mencakup pembibitan/pembesaran mandiri.

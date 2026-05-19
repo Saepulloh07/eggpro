@@ -35,28 +35,6 @@ export default function FeedFormulation() {
     const [isEditingFormOpen, setIsEditingFormOpen] = useState(false);
     const [currentEditingRecipe, setCurrentEditingRecipe] = useState<FeedRecipe | null>(null);
 
-    // Auto-create 'Pakan Jadi Layer Mix' if missing and set as default
-    React.useEffect(() => {
-        const layerMix = inventory.find(i => i.name === 'Pakan Jadi Layer Mix' && i.type === ItemType.FINISHED_FEED);
-        if (!layerMix) {
-            addInventoryItem({
-                name: 'Pakan Jadi Layer Mix',
-                type: ItemType.FINISHED_FEED,
-                quantity: 0,
-                unit: 'kg',
-                reorderPoint: 500,
-                lastPrice: 0,
-                houseId: activeHouse?.id || ''
-            });
-        } else {
-            // Always ensure an output item is selected
-            // Default to recipe's specific output, otherwise Layer Mix
-            if (!outputItemId || !inventory.some(i => i.id === outputItemId)) {
-                setOutputItemId(activeRecipe?.outputInventoryItemId || layerMix.id);
-            }
-        }
-    }, [inventory, addInventoryItem, outputItemId]);
-
     // Finished feed items from central warehouse (Gudang Pusat)
     const finishedFeedItems = useMemo(() =>
         inventory.filter(i => i.type === ItemType.FINISHED_FEED && i.houseId === activeHouse?.id), [inventory, activeHouse]);
@@ -69,6 +47,27 @@ export default function FeedFormulation() {
     const activeRecipe = useMemo(() =>
         recipes.find(r => r.id === selectedRecipeId) || recipes[0],
         [selectedRecipeId, recipes]);
+
+    // Auto-create a unique 'Pakan Jadi - [Nama Resep]' finished feed item for the active recipe if missing
+    React.useEffect(() => {
+        if (!activeRecipe) return;
+        const customName = `Pakan Jadi - ${activeRecipe.name}`;
+        const existingItem = inventory.find(i => i.name === customName && i.type === ItemType.FINISHED_FEED && i.houseId === (activeHouse?.id || ''));
+        if (!existingItem) {
+            addInventoryItem({
+                name: customName,
+                type: ItemType.FINISHED_FEED,
+                quantity: 0,
+                unit: 'kg',
+                reorderPoint: 500,
+                lastPrice: 0,
+                houseId: activeHouse?.id || ''
+            });
+        } else {
+            // Automatically set outputItemId to the matched custom item!
+            setOutputItemId(existingItem.id);
+        }
+    }, [activeRecipe, inventory, activeHouse, addInventoryItem]);
 
     const formulationDetails = useMemo(() => {
         if (!activeRecipe || !targetProductionKg) return [];

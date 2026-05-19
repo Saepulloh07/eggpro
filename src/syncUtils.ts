@@ -42,12 +42,46 @@ export const syncRecord = async (key: string, record: any) => {
   
   // Add timestamp for conflict resolution
   record.updatedAt = new Date().toISOString();
+
+  if (key === 'poultry_farm_settings') {
+    // For settings, we store and sync it as a single plain object, not an array!
+    const encryptedLocalData = await localforage.getItem<string>(key);
+    let currentSettings: any = {};
+    if (encryptedLocalData) {
+      const decrypted = decryptData(encryptedLocalData);
+      if (Array.isArray(decrypted)) {
+        currentSettings = decrypted.find((x: any) => x.id === 'singleton') || decrypted[0] || {};
+      } else if (decrypted && typeof decrypted === 'object') {
+        currentSettings = decrypted;
+      }
+    }
+    const updatedSettings = { ...currentSettings, ...record, id: 'singleton' };
+    await localforage.setItem(key, encryptData(updatedSettings));
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${apiUrl}/api/sync/${key}/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSettings)
+      });
+      if (!res.ok) throw new Error('Server error');
+    } catch (error) {
+      console.warn(`[Offline] Queueing individual sync for ${key}:${record.id}`, error);
+      const queue = await localforage.getItem<string[]>('sync_queue') || [];
+      if (!queue.includes(key)) {
+        await localforage.setItem('sync_queue', [...queue, key]);
+      }
+    }
+    return;
+  }
   
   // 1. Update/Add to local storage array
   const encryptedLocalData = await localforage.getItem<string>(key);
   let data: any[] = [];
   if (encryptedLocalData) {
-    data = decryptData(encryptedLocalData) || [];
+    const decrypted = decryptData(encryptedLocalData);
+    data = Array.isArray(decrypted) ? decrypted : (decrypted ? [decrypted] : []);
   }
   
   const index = data.findIndex(item => item.id === record.id);
@@ -220,6 +254,14 @@ export const loadFromDbOrIndexedDB = async (key: string, setter: (val: any) => v
           break;
         }
       }
+
+      // If the backend returns settings wrapped in an array, unwrap it!
+      if (key === 'poultry_farm_settings') {
+        if (Array.isArray(data)) {
+          data = data.find((x: any) => x.id === 'singleton') || data[0] || {};
+        }
+      }
+
       setter(data);
       // Save locally (Encrypted)
       await localforage.setItem(key, encryptData(data));
@@ -232,8 +274,13 @@ export const loadFromDbOrIndexedDB = async (key: string, setter: (val: any) => v
   // 2. Fallback to IndexedDB
   const encryptedLocalData = await localforage.getItem<string>(key);
   if (encryptedLocalData) {
-    const decryptedData = decryptData(encryptedLocalData);
+    let decryptedData = decryptData(encryptedLocalData);
     if (decryptedData) {
+      if (key === 'poultry_farm_settings') {
+        if (Array.isArray(decryptedData)) {
+          decryptedData = decryptedData.find((x: any) => x.id === 'singleton') || decryptedData[0] || {};
+        }
+      }
       setter(decryptedData);
     }
   }

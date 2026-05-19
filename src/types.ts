@@ -224,6 +224,8 @@ export interface MasterPrice {
   id: string;
   name: string;
   price: number;
+  type?: 'telur' | 'non-egg';
+  unit?: string;
 }
 
 export enum ItemType {
@@ -481,15 +483,15 @@ export const DEFAULT_FARM_SETTINGS: FarmSettings = {
   units: ['kg', 'liter', 'ml', 'papan', 'butir', 'sak'],
   wasteFreePercentage: 3,
   masterPrices: [
-    { id: 'BM', name: 'Remban', price: 28500 },
-    { id: 'KRC', name: 'Bujang', price: 27000 },
-    { id: 'KRC_RETAK', name: 'Bujang Retak', price: 25000 },
-    { id: 'KS', name: 'KS', price: 25000 },
-    { id: 'KS_RETAK', name: 'KS Retak', price: 22000 },
-    { id: 'PELOR', name: 'Pelor', price: 20000 },
-    { id: 'RETAK', name: 'Retak', price: 15000 },
-    { id: 'PECAH', name: 'Pecah', price: 5000 },
-    { id: 'NON_EGG', name: 'Limbah/Karung', price: 5000 }
+    { id: 'BM', name: 'Remban', price: 28500, type: 'telur', unit: 'butir' },
+    { id: 'KRC', name: 'Bujang', price: 27000, type: 'telur', unit: 'butir' },
+    { id: 'KRC_RETAK', name: 'Bujang Retak', price: 25000, type: 'telur', unit: 'butir' },
+    { id: 'KS', name: 'KS', price: 25000, type: 'telur', unit: 'butir' },
+    { id: 'KS_RETAK', name: 'KS Retak', price: 22000, type: 'telur', unit: 'butir' },
+    { id: 'PELOR', name: 'Pelor', price: 20000, type: 'telur', unit: 'butir' },
+    { id: 'RETAK', name: 'Retak', price: 15000, type: 'telur', unit: 'butir' },
+    { id: 'PECAH', name: 'Pecah', price: 5000, type: 'telur', unit: 'butir' },
+    { id: 'NON_EGG', name: 'Limbah/Karung', price: 5000, type: 'non-egg', unit: 'sak' }
   ],
   suppliers: [],
   initialCapital: 0,

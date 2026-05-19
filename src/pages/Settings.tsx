@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserRole, User, PoultryHouse, FlockBatch, Account, AccountCategory } from '../types';
+import { UserRole, User, PoultryHouse, FlockBatch, Account, AccountCategory, MasterPrice } from '../types';
 import Swal from 'sweetalert2';
 import { useHouse } from '../HouseContext';
 import { useApp } from '../AppContext';
@@ -59,7 +59,7 @@ export default function Settings() {
 
   // --- Master Price State ---
   const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
-  const [editingPrice, setEditingPrice] = useState<{id: string, name: string, price: number} | null>(null);
+  const [editingPrice, setEditingPrice] = useState<MasterPrice | null>(null);
 
   // --- Supplier State ---
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
@@ -237,12 +237,14 @@ export default function Settings() {
     const formData = new FormData(e.target as HTMLFormElement);
     const name = formData.get('name') as string;
     const price = Number(formData.get('price'));
+    const type = formData.get('type') as 'telur' | 'non-egg';
+    const unit = formData.get('unit') as string;
 
     const masterPrices = farmSettings.masterPrices || [];
     if (editingPrice) {
-      saveFarmSettings({ masterPrices: masterPrices.map(p => p.id === editingPrice.id ? { ...p, name, price } : p) });
+      saveFarmSettings({ masterPrices: masterPrices.map(p => p.id === editingPrice.id ? { ...p, name, price, type, unit } : p) });
     } else {
-      saveFarmSettings({ masterPrices: [...masterPrices, { id: `cat-${Date.now()}`, name, price }] });
+      saveFarmSettings({ masterPrices: [...masterPrices, { id: `cat-${Date.now()}`, name, price, type, unit }] });
     }
     Swal.fire({ title: 'Berhasil!', text: 'Harga master telah disimpan.', icon: 'success', confirmButtonColor: '#0f172a' });
     setIsPriceModalOpen(false);
@@ -887,8 +889,16 @@ export default function Settings() {
                                     {(farmSettings.masterPrices || []).map(p => (
                                         <div key={p.id} className="bg-slate-50 border border-slate-100 p-4 flex items-center justify-between group">
                                             <div>
-                                                <p className="text-xs font-bold text-slate-900 uppercase">{p.name}</p>
-                                                <p className="text-[10px] text-amber-500 font-bold italic mt-1">{formatCurrency(p.price)}</p>
+                                                <div className="flex items-center gap-1.5">
+                                                    <p className="text-xs font-bold text-slate-900 uppercase">{p.name}</p>
+                                                    <span className={cn(
+                                                        "text-[7px] px-1.5 py-0.5 font-bold uppercase tracking-wider rounded-sm",
+                                                        p.type === 'non-egg' ? "bg-amber-100 text-amber-700 border border-amber-200" : "bg-blue-100 text-blue-700 border border-blue-200"
+                                                    )}>
+                                                        {p.type === 'non-egg' ? 'Non-Telur' : 'Telur'}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10px] text-amber-500 font-bold italic mt-1">{formatCurrency(p.price)} / {p.unit || 'butir'}</p>
                                             </div>
                                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
                                                 <button onClick={() => { setEditingPrice(p); setIsPriceModalOpen(true); }} className="text-slate-400 hover:text-amber-500"><Edit2 size={12} /></button>
@@ -975,6 +985,25 @@ export default function Settings() {
                                 <div>
                                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Nama Kategori</label>
                                     <input name="name" required defaultValue={editingPrice?.name} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Tipe Produk</label>
+                                    <select name="type" required defaultValue={editingPrice?.type || 'telur'} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                                        <option value="telur">Telur</option>
+                                        <option value="non-egg">Non-Egg (Limbah, Karung, Kotoran, dll)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Satuan (Unit)</label>
+                                    <select name="unit" required defaultValue={editingPrice?.unit || 'butir'} className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                                        <option value="butir">butir</option>
+                                        <option value="kg">kg</option>
+                                        <option value="sak">sak</option>
+                                        <option value="liter">liter</option>
+                                        <option value="ml">ml</option>
+                                        <option value="papan">papan</option>
+                                        <option value="pcs">pcs</option>
+                                    </select>
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Harga / Unit (Rp)</label>

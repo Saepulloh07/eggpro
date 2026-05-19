@@ -1,0 +1,18 @@
+=============================================================================
+DAFTAR BUG TERSISA & POTENSI RISIKO (POST-FIX PHASE 3)
+Tanggal Audit : 19 Mei 2026
+=============================================================================
+
+1. DAFTAR BUG (MINOR / EDGE CASES)
+- BUG-001 (Sinkronisasi Data): "Last-Write-Wins" Conflict. Jika dua pengguna memodifikasi data yang sama secara bersamaan saat offline, pengguna terakhir yang mendapatkan koneksi internet akan menimpa data pengguna sebelumnya tanpa ada fitur penggabungan (merge) atau peringatan resolusi konflik.
+- BUG-002 (Kalkulasi Modal): Kalkulasi modal awal pada `Finance.tsx` belum sepenuhnya mengikat nilai aset jika aset tersebut dibeli menggunakan akun kas lain di luar akun kandang (sehingga neraca house vs general ledger bisa berpotensi tidak sinkron dalam skenario kompleks).
+
+2. POTENSI RISIKO BISNIS (BUSINESS RISKS)
+- Ketiadaan Modul Pullet: Peternakan tidak dapat melacak secara otomatis perpindahan HPP (Harga Pokok Penjualan) dari biaya pakan pullet menjadi Modal Aset Biologis ketika ayam siap bertelur. Semuanya harus dimasukkan secara manual lewat "Modal Awal" (Capital Injection).
+- Tidak Ada Fitur Retur: Kegagalan retur pakan dari kandang ke gudang pusat, atau retur telur dari pelanggan, dapat menyebabkan stok barang di gudang terdistorsi. Solusi sementara adalah menggunakan fitur 'Mutasi Stok' manual.
+
+3. REKOMENDASI PERBAIKAN SELANJUTNYA (PHASE 4)
+- [HIGH] Buat sistem Role-Based Access Control (RBAC) lebih granular (misal: Pekerja Kandang hanya bisa melihat input produksi, tanpa melihat halaman Finance).
+- [MEDIUM] Buat modul "Pullet & Rearing" khusus untuk peternakan yang melakukan pembesaran DOC mandiri.
+- [LOW] Kembangkan "Conflict Resolution UI" pada layar Sinkronisasi untuk menangani skenario bentrok edit offline antar-device.
+=============================================================================

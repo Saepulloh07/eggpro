@@ -785,8 +785,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const saveFarmSettings = async (settings: Partial<FarmSettings>) => {
-    setFarmSettings(prev => ({ ...prev, ...settings }));
-    syncRecord('poultry_farm_settings', { id: 'singleton', ...settings });
+    setFarmSettings(prev => {
+      const merged = { ...prev, ...settings };
+      syncRecord('poultry_farm_settings', { id: 'singleton', ...merged });
+      return merged;
+    });
   };
 
   const addModalAwal = async (amount: number, description = 'Modal Awal', houseId?: string, targetAccountId?: string) => {
