@@ -317,17 +317,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // When a debt/receivable is recorded, it must be journaled to keep the balance sheet balanced.
     const today = new Date().toISOString().split('T')[0];
     const isHutang = record.type === 'HUTANG';
-    
+
     // Choose appropriate accounts based on description keywords
     let debitAcc = '';
     let creditAcc = '';
-    
+
     if (isHutang) {
       // Manual Debt: Credit a Liability account, Debit an Expense or Asset account
-      debitAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-persediaan-pakan' : 
-                 record.description?.toLowerCase().includes('obat') ? 'acc-persediaan-obat' : 'acc-beban-lain';
-      creditAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' : 
-                  record.description?.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
+      debitAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-persediaan-pakan' :
+        record.description?.toLowerCase().includes('obat') ? 'acc-persediaan-obat' : 'acc-beban-lain';
+      creditAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' :
+        record.description?.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
     } else {
       // Manual Receivable: Debit an Asset (Receivable) account, Credit a Revenue or Asset account
       debitAcc = 'acc-piutang-telur';
@@ -605,7 +605,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setInventory(prev => prev.map(item => {
       const isEggMatch = item.type === ItemType.EGG_STOCK && item.eggCategory === saleData.category;
       const isNonEggMatch = item.type !== ItemType.EGG_STOCK && item.name === saleData.category;
-      
+
       if ((isEggMatch || isNonEggMatch) && item.houseId === saleData.houseId) {
         itemCost = item.lastPrice || 1500;
         const updated = { ...item, quantity: Math.max(0, item.quantity - saleData.quantity) };
@@ -690,18 +690,34 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     deleteRecord('poultry_recipes', id);
   };
 
+  // Helper to convert any date string (ISO or date-only) to YYYY-MM-DD local format
+  const toLocalYYYYMMDD = (dateVal: string | Date): string => {
+    if (!dateVal) return '';
+    if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+      return dateVal;
+    }
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return '';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // ─── Computed Analytics ────────────────────────────────────────────────────
 
   /** HDP % for a specific house/date */
   const getHDP = (houseId: string, date: string, currentCount: number): number => {
-    const log = productionLogs.find(p => p.houseId === houseId && p.date === date);
+    const targetDateStr = toLocalYYYYMMDD(date);
+    const log = productionLogs.find(p => p.houseId === houseId && toLocalYYYYMMDD(p.date) === targetDateStr);
     if (!log || currentCount === 0) return 0;
     return (log.eggCount / currentCount) * 100;
   };
 
   /** HHP (Hen Housed Production) */
   const getHHP = (houseId: string, initialCount: number, arrivalDate?: string): number => {
-    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDate || p.date >= arrivalDate));
+    const arrivalDateStr = arrivalDate ? toLocalYYYYMMDD(arrivalDate) : '';
+    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDateStr || toLocalYYYYMMDD(p.date) >= arrivalDateStr));
     if (logs.length === 0 || initialCount === 0) return 0;
     const totalEggs = logs.reduce((sum, log) => sum + log.eggCount, 0);
     return totalEggs / initialCount;
@@ -709,7 +725,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   /** Cumulative FCR = total feed consumed / total egg kg for a house */
   const getCumulativeFCR = (houseId: string, arrivalDate?: string): number => {
-    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDate || p.date >= arrivalDate));
+    const arrivalDateStr = arrivalDate ? toLocalYYYYMMDD(arrivalDate) : '';
+    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDateStr || toLocalYYYYMMDD(p.date) >= arrivalDateStr));
     const totalFeed = logs.reduce((a, b) => a + b.feedConsumed, 0);
     // Estimate egg mass if eggWeight is missing (assume 62.5g or 0.0625kg per egg)
     const totalKg = logs.reduce((a, b) => a + (b.eggWeight || (b.eggCount * 0.0625)), 0);
@@ -727,7 +744,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   /** Full analytics bundle for a flock */
   const getFlockAnalytics = (houseId: string, currentCount: number, arrivalDate?: string): FlockAnalytics => {
-    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDate || p.date >= arrivalDate));
+    const arrivalDateStr = arrivalDate ? toLocalYYYYMMDD(arrivalDate) : '';
+    const logs = productionLogs.filter(p => p.houseId === houseId && (!arrivalDateStr || toLocalYYYYMMDD(p.date) >= arrivalDateStr));
     const totalFeed = logs.reduce((a, b) => a + b.feedConsumed, 0);
     const totalButir = logs.reduce((a, b) => a + b.totalButir, 0);
     // Estimate egg mass if missing
@@ -874,7 +892,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       { accountId: toAccountId, debit: amount, credit: 0 },
       { accountId: fromAccountId, debit: 0, credit: amount }
     ]);
-    
+
     await addTransaction({
       date,
       description: `[TRANSFER] ${accounts.find(a => a.id === fromAccountId)?.name} -> ${accounts.find(a => a.id === toAccountId)?.name} - ${notes}`,

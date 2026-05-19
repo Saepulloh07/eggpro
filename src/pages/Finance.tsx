@@ -18,7 +18,6 @@ import Modal from '../components/Modal';
 import Swal from 'sweetalert2';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-
 import { useHouse } from '../HouseContext';
 import { useGlobalData } from '../GlobalContext';
 import { useFlock } from '../FlockContext';
@@ -57,14 +56,14 @@ export default function Finance() {
 
     // --- Filtering Data based on Scope ---
     const isKonsolidasi = !activeHouse;
-    const filteredProdLogs = isKonsolidasi 
-        ? productionLogs.filter(p => p.date.startsWith(selectedMonth)) 
+    const filteredProdLogs = isKonsolidasi
+        ? productionLogs.filter(p => p.date.startsWith(selectedMonth))
         : productionLogs.filter(p => p.houseId === activeHouse?.id && p.date.startsWith(selectedMonth));
-    const filteredSalesLogs = isKonsolidasi 
-        ? salesLogs.filter(s => s.date.startsWith(selectedMonth)) 
+    const filteredSalesLogs = isKonsolidasi
+        ? salesLogs.filter(s => s.date.startsWith(selectedMonth))
         : salesLogs.filter(s => s.houseId === activeHouse?.id && s.date.startsWith(selectedMonth));
-    const houseTransactions = isKonsolidasi 
-        ? transactions.filter(t => t.date.startsWith(selectedMonth)) 
+    const houseTransactions = isKonsolidasi
+        ? transactions.filter(t => t.date.startsWith(selectedMonth))
         : transactions.filter(t => t.houseId === activeHouse?.id && t.date.startsWith(selectedMonth));
     const expenseTransactions = houseTransactions.filter(t => {
         if (t.type !== 'EXPENSE' || t.category === 'Pelunasan') return false;
@@ -143,17 +142,16 @@ export default function Finance() {
         const salvageValue = asset.salvageValue || 0;
         const depreciableAmount = asset.purchasePrice - salvageValue;
         const monthlyDepreciation = depreciableAmount / (asset.expectedLifeYears * 12);
-        
+
         // Check if asset is already fully depreciated or not yet purchased
         const purchaseDateStr = asset.purchaseDate.slice(0, 7);
         if (purchaseDateStr > selectedMonth) return 0;
-        
         const purchaseDate = new Date(asset.purchaseDate);
         const today = new Date(selectedMonth + "-01");
         const diffMonths = (today.getFullYear() - purchaseDate.getFullYear()) * 12 + (today.getMonth() - purchaseDate.getMonth());
-        
+
         if (diffMonths >= (asset.expectedLifeYears * 12)) return 0;
-        
+
         return monthlyDepreciation;
     };
 
@@ -167,7 +165,6 @@ export default function Finance() {
     const activeFlock = getActiveFlockByHouse(activeHouse?.id || '');
     const currentPopulation = activeFlock?.currentCount || 0;
 
-    // ──────────────── Egg Categorization Helpers ────────────────
     const getNormalButir = (log: typeof filteredProdLogs[0]) =>
         (log.breakdown[EggCategory.BM] || 0) +
         (log.breakdown[EggCategory.KRC] || 0) +
@@ -221,7 +218,6 @@ export default function Finance() {
     }, [filteredProdLogs, filteredSalesLogs]);
 
     const paginatedBalanceLogs = productionWithBalance.slice((prodPage - 1) * ITEMS_PER_PAGE, prodPage * ITEMS_PER_PAGE);
-
 
     const handleUpdateStatus = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -672,9 +668,9 @@ export default function Finance() {
                         <div className="flex items-center gap-3">
                             <div className="flex flex-col items-end">
                                 <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Periode Laporan</label>
-                                <input 
-                                    type="month" 
-                                    value={selectedMonth} 
+                                <input
+                                    type="month"
+                                    value={selectedMonth}
                                     onChange={(e) => setSelectedMonth(e.target.value)}
                                     className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-amber-500 shadow-sm"
                                 />
@@ -757,10 +753,6 @@ export default function Finance() {
                                         <div className="flex justify-between items-center">
                                             <span className="text-[10px] text-slate-500 font-bold">HPP (Pemakaian)</span>
                                             <span className="text-[11px] font-black text-rose-600">-{formatCurrency(totalUsageCost)}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] text-slate-500 font-bold">Penyusutan Aset</span>
-                                            <span className="text-[11px] font-black text-rose-400">-{formatCurrency(totalDepreciation)}</span>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <span className="text-[10px] text-slate-500 font-bold">Laba/Rugi (Accrual)</span>
@@ -1162,64 +1154,6 @@ export default function Finance() {
                                         })}
                                     </div>
 
-                                    {/* <div className="bg-white border border-slate-200 overflow-hidden shadow-sm"> */}
-                                    {/* <div className="px-8 py-5 border-b border-slate-100 bg-slate-900 flex items-center justify-between">
-                                            <div>
-                                                <h3 className="font-bold text-base text-white uppercase tracking-tight italic">Buku Kas Umum</h3>
-                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Semua mutasi kas · {houseTransactions.length} transaksi</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Saldo Akhir</p>
-                                                <p className={`text-lg font-black ${(totalIncome - totalExpenses) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(totalIncome - totalExpenses + totalModalAwal)}</p>
-                                            </div>
-                                        </div> */}
-                                    {/* <div className="overflow-x-auto">
-                                            <table className="w-full text-left border-collapse min-w-max">
-                                                <thead>
-                                                    <tr className="bg-slate-800 text-white text-[9px] font-black uppercase tracking-widest">
-                                                        <th className="px-3 py-3 w-8">No</th>
-                                                        <th className="px-3 py-3">Tanggal</th>
-                                                        <th className="px-3 py-3">Keterangan</th>
-                                                        <th className="px-3 py-3 text-center">Jenis</th>
-                                                        <th className="px-3 py-3 text-right">Debit (Masuk)</th>
-                                                        <th className="px-3 py-3 text-right">Kredit (Keluar)</th>
-                                                        <th className="px-3 py-3">Akun</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="text-[10px] divide-y divide-slate-50">
-                                                    {houseTransactions.length === 0 ? (
-                                                        <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 font-bold uppercase text-[9px]">Belum ada transaksi di kandang ini</td></tr>
-                                                    ) : [...houseTransactions].reverse().map((t, idx) => (
-                                                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                                                            <td className="px-3 py-2.5 text-slate-400 font-bold">{idx + 1}</td>
-                                                            <td className="px-3 py-2.5 font-bold text-slate-700">{new Date(t.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                                                            <td className="px-3 py-2.5 font-bold text-slate-800 max-w-[200px] truncate">{t.description}</td>
-                                                            <td className="px-3 py-2.5 text-center">
-                                                                <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${t.type === 'INCOME' ? 'bg-emerald-50 text-emerald-700' :
-                                                                    t.type === 'EXPENSE' ? 'bg-rose-50 text-rose-700' :
-                                                                        t.type === 'MODAL' ? 'bg-blue-50 text-blue-700' :
-                                                                            'bg-slate-100 text-slate-600'
-                                                                    }`}>{t.type}</span>
-                                                            </td>
-                                                            <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">{(t.type === 'INCOME' || t.type === 'MODAL') ? formatCurrency(t.total) : '-'}</td>
-                                                            <td className="px-3 py-2.5 text-right font-mono font-bold text-rose-600">{t.type === 'EXPENSE' ? formatCurrency(t.total) : '-'}</td>
-                                                            <td className="px-3 py-2.5 text-slate-500 text-[9px]">{t.account}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                                {houseTransactions.length > 0 && (
-                                                    <tfoot className="bg-slate-100 border-t-2 border-slate-300">
-                                                        <tr>
-                                                            <td colSpan={4} className="px-3 py-3 text-[9px] font-black uppercase tracking-widest text-slate-700">TOTAL</td>
-                                                            <td className="px-3 py-3 text-right font-black text-emerald-700 font-mono">{formatCurrency(totalIncome + totalModalAwal)}</td>
-                                                            <td className="px-3 py-3 text-right font-black text-rose-600 font-mono">{formatCurrency(houseTransactions.filter(t => t.type === 'EXPENSE').reduce((a, b) => a + b.total, 0))}</td>
-                                                            <td />
-                                                        </tr>
-                                                    </tfoot>
-                                                )}
-                                            </table>
-                                        </div> */}
-                                    {/* </div> */}
 
                                     <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
                                         <div className="px-8 py-5 border-b border-slate-100 bg-emerald-50 flex items-center justify-between">

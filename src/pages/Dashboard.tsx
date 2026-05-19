@@ -42,6 +42,20 @@ function getWeekAgo(n: number) {
 
 const DAY_LABELS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
+// Helper to convert any date string (ISO or date-only) to YYYY-MM-DD local format
+const toLocalYYYYMMDD = (dateVal: string | Date): string => {
+  if (!dateVal) return '';
+  if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+    return dateVal;
+  }
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 interface KpiCardProps {
@@ -134,12 +148,40 @@ export default function Dashboard() {
         const d = new Date(now);
         d.setDate(d.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
-        const log = houseLogs.find(l => l.date === dateStr);
+        const log = houseLogs.find(l => toLocalYYYYMMDD(l.date) === dateStr);
         
-        // Calculate historical population
-        const historicalPop = activeBatch 
-          ? activeBatch.initialCount - mutations.filter(m => m.batchId === activeBatch.id && m.date <= dateStr).reduce((sum, m) => sum + m.quantity, 0)
-          : currentCount;
+        // Calculate historical population accurately
+        let historicalPop = activeBatch ? activeBatch.initialCount : currentCount;
+        if (activeBatch) {
+          const flockMutations = mutations.filter(m => 
+            m.houseId === activeBatch.houseId && 
+            toLocalYYYYMMDD(m.date) >= toLocalYYYYMMDD(activeBatch.arrivalDate) && 
+            toLocalYYYYMMDD(m.date) <= dateStr
+          );
+          
+          let mutationDelta = 0;
+          flockMutations.forEach(m => {
+            if (m.type === MutationType.ARRIVAL) {
+              if (!(toLocalYYYYMMDD(m.date) === toLocalYYYYMMDD(activeBatch.arrivalDate) && m.count === activeBatch.initialCount)) {
+                mutationDelta += m.count;
+              }
+            } else if (m.type === MutationType.MORTALITY || m.type === MutationType.CULLING || m.type === MutationType.TRANSFER) {
+              mutationDelta -= m.count;
+            }
+          });
+
+          const transferInMutations = mutations.filter(m => 
+            m.targetHouseId === activeBatch.houseId && 
+            m.type === MutationType.TRANSFER &&
+            toLocalYYYYMMDD(m.date) >= toLocalYYYYMMDD(activeBatch.arrivalDate) && 
+            toLocalYYYYMMDD(m.date) <= dateStr
+          );
+          transferInMutations.forEach(m => {
+            mutationDelta += m.count;
+          });
+
+          historicalPop = Math.max(0, activeBatch.initialCount + mutationDelta);
+        }
 
         const hdp = log && historicalPop > 0 ? (log.eggCount / historicalPop) * 100 : null;
         result.push({
@@ -147,7 +189,7 @@ export default function Dashboard() {
           produksi: log ? (log.totalButir ?? 0) : 0,
           pakan: log ? log.feedConsumed : 0,
           hdp: hdp ? parseFloat(hdp.toFixed(1)) : null,
-          standar: getStrainStandardHDP(ageWeeks),
+          standar: getStrainStandardHDP(Math.max(1, ageWeeks - Math.floor(i / 7))),
           mortalitas: log ? log.mortality : 0,
         });
       }
@@ -158,11 +200,12 @@ export default function Dashboard() {
         endD.setDate(endD.getDate() - (i * 7));
         const startD = new Date(endD);
         startD.setDate(startD.getDate() - 6);
+        const dateStr = endD.toISOString().split('T')[0];
 
         let totalProd = 0, totalPakan = 0, totalMortality = 0, totalEggCount = 0, logCount = 0;
 
         houseLogs.forEach(l => {
-          const ld = new Date(l.date);
+          const ld = new Date(toLocalYYYYMMDD(l.date));
           if (ld >= startD && ld <= endD) {
             totalProd += (l.totalButir ?? 0);
             totalPakan += l.feedConsumed;
@@ -172,7 +215,40 @@ export default function Dashboard() {
           }
         });
 
-        const avgHdp = logCount > 0 && currentCount > 0 ? ((totalEggCount / logCount) / currentCount) * 100 : null;
+        // Calculate historical population for the end of this week
+        let historicalPop = activeBatch ? activeBatch.initialCount : currentCount;
+        if (activeBatch) {
+          const flockMutations = mutations.filter(m => 
+            m.houseId === activeBatch.houseId && 
+            toLocalYYYYMMDD(m.date) >= toLocalYYYYMMDD(activeBatch.arrivalDate) && 
+            toLocalYYYYMMDD(m.date) <= dateStr
+          );
+          
+          let mutationDelta = 0;
+          flockMutations.forEach(m => {
+            if (m.type === MutationType.ARRIVAL) {
+              if (!(toLocalYYYYMMDD(m.date) === toLocalYYYYMMDD(activeBatch.arrivalDate) && m.count === activeBatch.initialCount)) {
+                mutationDelta += m.count;
+              }
+            } else if (m.type === MutationType.MORTALITY || m.type === MutationType.CULLING || m.type === MutationType.TRANSFER) {
+              mutationDelta -= m.count;
+            }
+          });
+
+          const transferInMutations = mutations.filter(m => 
+            m.targetHouseId === activeBatch.houseId && 
+            m.type === MutationType.TRANSFER &&
+            toLocalYYYYMMDD(m.date) >= toLocalYYYYMMDD(activeBatch.arrivalDate) && 
+            toLocalYYYYMMDD(m.date) <= dateStr
+          );
+          transferInMutations.forEach(m => {
+            mutationDelta += m.count;
+          });
+
+          historicalPop = Math.max(0, activeBatch.initialCount + mutationDelta);
+        }
+
+        const avgHdp = logCount > 0 && historicalPop > 0 ? ((totalEggCount / logCount) / historicalPop) * 100 : null;
 
         result.push({
           name: `W${weeks - i}`,
@@ -189,10 +265,15 @@ export default function Dashboard() {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         const monthStr = d.toISOString().slice(0, 7);
 
+        const year = d.getFullYear();
+        const month = d.getMonth() + 1;
+        const lastDay = new Date(year, month, 0).getDate();
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
         let totalProd = 0, totalPakan = 0, totalMortality = 0, totalEggCount = 0, logCount = 0;
 
         houseLogs.forEach(l => {
-          if (l.date.startsWith(monthStr)) {
+          if (toLocalYYYYMMDD(l.date).startsWith(monthStr)) {
             totalProd += (l.totalButir ?? 0);
             totalPakan += l.feedConsumed;
             totalMortality += l.mortality;
@@ -201,7 +282,40 @@ export default function Dashboard() {
           }
         });
 
-        const avgHdp = logCount > 0 && currentCount > 0 ? ((totalEggCount / logCount) / currentCount) * 100 : null;
+        // Calculate historical population for the end of this month
+        let historicalPop = activeBatch ? activeBatch.initialCount : currentCount;
+        if (activeBatch) {
+          const flockMutations = mutations.filter(m => 
+            m.houseId === activeBatch.houseId && 
+            toLocalYYYYMMDD(m.date) >= toLocalYYYYMMDD(activeBatch.arrivalDate) && 
+            toLocalYYYYMMDD(m.date) <= dateStr
+          );
+          
+          let mutationDelta = 0;
+          flockMutations.forEach(m => {
+            if (m.type === MutationType.ARRIVAL) {
+              if (!(toLocalYYYYMMDD(m.date) === toLocalYYYYMMDD(activeBatch.arrivalDate) && m.count === activeBatch.initialCount)) {
+                mutationDelta += m.count;
+              }
+            } else if (m.type === MutationType.MORTALITY || m.type === MutationType.CULLING || m.type === MutationType.TRANSFER) {
+              mutationDelta -= m.count;
+            }
+          });
+
+          const transferInMutations = mutations.filter(m => 
+            m.targetHouseId === activeBatch.houseId && 
+            m.type === MutationType.TRANSFER &&
+            toLocalYYYYMMDD(m.date) >= toLocalYYYYMMDD(activeBatch.arrivalDate) && 
+            toLocalYYYYMMDD(m.date) <= dateStr
+          );
+          transferInMutations.forEach(m => {
+            mutationDelta += m.count;
+          });
+
+          historicalPop = Math.max(0, activeBatch.initialCount + mutationDelta);
+        }
+
+        const avgHdp = logCount > 0 && historicalPop > 0 ? ((totalEggCount / logCount) / historicalPop) * 100 : null;
 
         result.push({
           name: d.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
@@ -215,7 +329,7 @@ export default function Dashboard() {
     }
 
     return result;
-  }, [houseLogs, chartPeriod, currentCount, ageWeeks]);
+  }, [houseLogs, chartPeriod, currentCount, ageWeeks, mutations, activeBatch]);
 
   // ── Key Metrics ─────────────────────────────────────────────────────────────
   const lastLog = houseLogs.at(-1);
@@ -349,7 +463,7 @@ export default function Dashboard() {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8' }} dy={6} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8' }} domain={[60, 100]} unit="%" />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8' }} domain={[0, 100]} unit="%" />
                   <Tooltip contentStyle={{ borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '11px' }} />
                   <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '8px' }} />
                   <Area type="monotone" dataKey="hdp" name="HDP Aktual (%)" stroke="#f59e0b" strokeWidth={2} fill="url(#gradHDP)" connectNulls dot={{ r: 3, fill: '#f59e0b' }} />
@@ -433,14 +547,15 @@ export default function Dashboard() {
           <div className="p-4 h-[220px]">
             {houseLogs.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                <BarChart data={chartData} margin={{ top: 5, right: 5, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: '#94a3b8' }} dy={4} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                  <YAxis yAxisId="left" orientation="left" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#f59e0b' }} />
+                  <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#0f172a' }} />
                   <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '4px' }} />
                   <Legend wrapperStyle={{ fontSize: '10px' }} />
-                  <Bar dataKey="pakan" name="Pakan (kg)" fill="#0f172a" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="produksi" name="Telur (butir)" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+                  <Bar yAxisId="right" dataKey="pakan" name="Pakan (kg)" fill="#0f172a" radius={[2, 2, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="produksi" name="Telur (butir)" fill="#f59e0b" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
