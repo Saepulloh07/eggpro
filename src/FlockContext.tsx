@@ -94,7 +94,29 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const getActiveFlockByHouse = (houseId: string) => {
-    return flocks.find(f => f.houseId === houseId && f.isActive);
+    const flock = flocks.find(f => f.houseId === houseId && f.isActive);
+    if (!flock) return undefined;
+
+    let dynamicCount = flock.initialCount;
+    const flockMutations = mutations.filter(m => 
+      m.houseId === houseId && m.date >= flock.arrivalDate
+    );
+    flockMutations.forEach(m => {
+      if (m.type === MutationType.ARRIVAL) {
+        if (!(m.date === flock.arrivalDate && m.count === flock.initialCount)) {
+          dynamicCount += m.count;
+        }
+      } else if (m.type === MutationType.MORTALITY || m.type === MutationType.CULLING || m.type === MutationType.TRANSFER) {
+        dynamicCount -= m.count;
+      }
+    });
+
+    const transferIn = mutations.filter(m => 
+      m.targetHouseId === houseId && m.type === MutationType.TRANSFER && m.date >= flock.arrivalDate
+    );
+    transferIn.forEach(m => dynamicCount += m.count);
+
+    return { ...flock, currentCount: Math.max(0, dynamicCount) };
   };
 
   const addMutation = async (mutData: Omit<PopulationMutation, 'id'>) => {
@@ -172,11 +194,15 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (mutData.type === MutationType.MORTALITY) newCount -= mutData.count;
         if (mutData.type === MutationType.CULLING) newCount -= mutData.count;
         if (mutData.type === MutationType.TRANSFER) newCount -= mutData.count;
-        return { ...f, currentCount: Math.max(0, newCount) };
+        const updated = { ...f, currentCount: Math.max(0, newCount) };
+        syncRecord('poultry_flocks', updated);
+        return updated;
       }
       // If TRANSFER, add to target house
       if (mutData.type === MutationType.TRANSFER && f.houseId === mutData.targetHouseId && f.isActive) {
-        return { ...f, currentCount: f.currentCount + mutData.count };
+        const updated = { ...f, currentCount: f.currentCount + mutData.count };
+        syncRecord('poultry_flocks', updated);
+        return updated;
       }
       return f;
     }));
@@ -197,10 +223,14 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (mut.type === MutationType.MORTALITY) newCount += mut.count;
         if (mut.type === MutationType.CULLING) newCount += mut.count;
         if (mut.type === MutationType.TRANSFER) newCount += mut.count;
-        return { ...f, currentCount: Math.max(0, newCount) };
+        const updated = { ...f, currentCount: Math.max(0, newCount) };
+        syncRecord('poultry_flocks', updated);
+        return updated;
       }
       if (mut.type === MutationType.TRANSFER && f.houseId === mut.targetHouseId && f.isActive) {
-        return { ...f, currentCount: Math.max(0, f.currentCount - mut.count) };
+        const updated = { ...f, currentCount: Math.max(0, f.currentCount - mut.count) };
+        syncRecord('poultry_flocks', updated);
+        return updated;
       }
       return f;
     }));
