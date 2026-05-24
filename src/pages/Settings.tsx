@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { UserRole, User, PoultryHouse, FlockBatch, Account, AccountCategory, MasterPrice } from '../types';
+import { UserRole, User, PoultryHouse, FlockBatch, Account, AccountCategory, MasterPrice, EggCategory } from '../types';
 import Swal from 'sweetalert2';
 import { useHouse } from '../HouseContext';
 import { useApp } from '../AppContext';
@@ -108,6 +108,7 @@ export default function Settings() {
     stdFeedIntake: farmSettings.stdFeedIntake,
     wasteFreePercentage: farmSettings.wasteFreePercentage,
     workerEggAllowancePerDay: farmSettings.workerEggAllowancePerDay ?? 5,
+    workerEggAllowanceCategory: farmSettings.workerEggAllowanceCategory ?? EggCategory.BM,
     lastClosingDate: farmSettings.lastClosingDate || '2020-01-01',
   });
   const [targetSaved, setTargetSaved] = React.useState(false);
@@ -751,6 +752,31 @@ export default function Settings() {
                                             />
                                             <div className="flex justify-between text-[8px] text-slate-400 font-bold">
                                                 <span>0%</span><span>5%</span><span>10%</span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-50 border border-slate-100 p-4 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-slate-700">Jatah Telur Pekerja (per hari)</label>
+                                                <span className="text-[9px] text-emerald-600 font-black">{targetForm.workerEggAllowancePerDay} Butir</span>
+                                            </div>
+                                            <p className="text-[9px] text-slate-400 mb-2">Jumlah telur dan jenis telur yang diberikan ke pekerja per harinya.</p>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input
+                                                    type="number" min={0} max={10} step={1}
+                                                    value={targetForm.workerEggAllowancePerDay}
+                                                    onChange={(e) => setTargetForm(prev => ({ ...prev, workerEggAllowancePerDay: Number(e.target.value) }))}
+                                                    className="w-full bg-white border border-slate-200 rounded-sm px-3 py-2 text-sm font-bold focus:border-amber-500 outline-none"
+                                                    placeholder="Jumlah Butir"
+                                                />
+                                                <select
+                                                    value={targetForm.workerEggAllowanceCategory}
+                                                    onChange={(e) => setTargetForm(prev => ({ ...prev, workerEggAllowanceCategory: e.target.value as EggCategory }))}
+                                                    className="w-full bg-white border border-slate-200 rounded-sm px-3 py-2 text-sm font-bold focus:border-amber-500 outline-none"
+                                                >
+                                                    {Object.values(EggCategory).map(cat => (
+                                                        <option key={cat} value={cat}>{cat}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </div>
                                         <div className="bg-slate-900 border border-slate-800 p-4 space-y-1 shadow-lg">

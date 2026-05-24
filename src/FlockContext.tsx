@@ -18,7 +18,7 @@ interface FlockContextType {
 const FlockContext = createContext<FlockContextType | undefined>(undefined);
 
 export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { addTransaction, deleteTransaction } = useGlobalData();
+  const { addTransaction, deleteTransaction, addJournalEntry, accounts } = useGlobalData();
   const [flocks, setFlocks] = useState<FlockBatch[]>([]);
   const [mutations, setMutations] = useState<PopulationMutation[]>([]);
 
@@ -100,6 +100,10 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addMutation = async (mutData: Omit<PopulationMutation, 'id'>) => {
     let transactionId: string | undefined;
 
+    const selectedAcc = accounts.find(a => a.isCashOrBank && a.id === `acc-kas-${mutData.houseId}`)
+      || accounts.find(a => a.isCashOrBank)
+      || accounts[0];
+
     // Financial Integration (Add transaction first to get ID)
     if (mutData.type === MutationType.ARRIVAL && mutData.totalPrice) {
       transactionId = await addTransaction({
@@ -109,10 +113,21 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         qty: `${mutData.count} ekor`,
         price: mutData.pricePerBird || 0,
         total: mutData.totalPrice,
-        account: 'Kas Tunai',
+        account: selectedAcc.name,
         type: 'EXPENSE',
         category: 'Pembelian DOC'
       });
+      addJournalEntry(
+        {
+          date: mutData.date,
+          description: `Pembelian DOC: ${mutData.count} ekor`,
+          reference: transactionId || ''
+        },
+        [
+          { accountId: 'acc-beban-doc', debit: mutData.totalPrice, credit: 0, houseId: mutData.houseId },
+          { accountId: selectedAcc.id, debit: 0, credit: mutData.totalPrice, houseId: mutData.houseId }
+        ]
+      );
     }
 
     if (mutData.type === MutationType.CULLING && mutData.totalPrice) {
@@ -123,10 +138,21 @@ export const FlockProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         qty: `${mutData.count} ekor`,
         price: mutData.pricePerBird || 0,
         total: mutData.totalPrice,
-        account: 'Kas Tunai',
+        account: selectedAcc.name,
         type: 'INCOME',
         category: 'Penjualan Afkir'
       });
+      addJournalEntry(
+        {
+          date: mutData.date,
+          description: `Penjualan Ayam Afkir: ${mutData.count} ekor`,
+          reference: transactionId || ''
+        },
+        [
+          { accountId: selectedAcc.id, debit: mutData.totalPrice, credit: 0, houseId: mutData.houseId },
+          { accountId: 'acc-penjualan-afkir', debit: 0, credit: mutData.totalPrice, houseId: mutData.houseId }
+        ]
+      );
     }
 
     const id = generateUUID();

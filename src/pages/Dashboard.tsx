@@ -183,6 +183,9 @@ export default function Dashboard() {
           historicalPop = Math.max(0, activeBatch.initialCount + mutationDelta);
         }
 
+        const dayMutations = mutations.filter(m => m.houseId === activeHouse?.id && m.type === MutationType.MORTALITY && toLocalYYYYMMDD(m.date) === dateStr);
+        const dayMortality = dayMutations.reduce((a, b) => a + b.count, 0);
+
         const hdp = log && historicalPop > 0 ? (log.eggCount / historicalPop) * 100 : null;
         result.push({
           name: d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' }),
@@ -190,7 +193,7 @@ export default function Dashboard() {
           pakan: log ? log.feedConsumed : 0,
           hdp: hdp ? parseFloat(hdp.toFixed(1)) : null,
           standar: getStrainStandardHDP(Math.max(1, ageWeeks - Math.floor(i / 7))),
-          mortalitas: log ? log.mortality : 0,
+          mortalitas: dayMortality,
         });
       }
     } else if (chartPeriod === 'MINGGUAN') {
@@ -202,18 +205,20 @@ export default function Dashboard() {
         startD.setDate(startD.getDate() - 6);
         const dateStr = endD.toISOString().split('T')[0];
 
-        let totalProd = 0, totalPakan = 0, totalMortality = 0, totalEggCount = 0, logCount = 0;
+        let totalProd = 0, totalPakan = 0, totalEggCount = 0, logCount = 0;
 
         houseLogs.forEach(l => {
           const ld = new Date(toLocalYYYYMMDD(l.date));
           if (ld >= startD && ld <= endD) {
             totalProd += (l.totalButir ?? 0);
             totalPakan += l.feedConsumed;
-            totalMortality += l.mortality;
             totalEggCount += l.eggCount;
             logCount++;
           }
         });
+
+        const weekMutations = mutations.filter(m => m.houseId === activeHouse?.id && m.type === MutationType.MORTALITY && toLocalYYYYMMDD(m.date) >= toLocalYYYYMMDD(startD) && toLocalYYYYMMDD(m.date) <= dateStr);
+        const totalMortality = weekMutations.reduce((a, b) => a + b.count, 0);
 
         // Calculate historical population for the end of this week
         let historicalPop = activeBatch ? activeBatch.initialCount : currentCount;
@@ -270,17 +275,19 @@ export default function Dashboard() {
         const lastDay = new Date(year, month, 0).getDate();
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-        let totalProd = 0, totalPakan = 0, totalMortality = 0, totalEggCount = 0, logCount = 0;
+        let totalProd = 0, totalPakan = 0, totalEggCount = 0, logCount = 0;
 
         houseLogs.forEach(l => {
           if (toLocalYYYYMMDD(l.date).startsWith(monthStr)) {
             totalProd += (l.totalButir ?? 0);
             totalPakan += l.feedConsumed;
-            totalMortality += l.mortality;
             totalEggCount += l.eggCount;
             logCount++;
           }
         });
+
+        const monthMutations = mutations.filter(m => m.houseId === activeHouse?.id && m.type === MutationType.MORTALITY && toLocalYYYYMMDD(m.date).startsWith(monthStr));
+        const totalMortality = monthMutations.reduce((a, b) => a + b.count, 0);
 
         // Calculate historical population for the end of this month
         let historicalPop = activeBatch ? activeBatch.initialCount : currentCount;

@@ -82,11 +82,7 @@ export default function Finance() {
 
     const pelunasanExpenses = houseTransactions.filter(t => t.type === 'EXPENSE' && t.category === 'Pelunasan');
 
-    const incomeTransactions = houseTransactions.filter(t => {
-        if (t.type !== 'INCOME' || t.category === 'Pelunasan') return false;
-        const account = accounts.find(a => a.id === t.account || a.name === t.account);
-        return !account || account.category === 'REVENUE';
-    });
+    const incomeTransactions = houseTransactions.filter(t => t.type === 'INCOME' && t.category !== 'Pelunasan');
 
     const pelunasanIncome = houseTransactions.filter(t => t.type === 'INCOME' && t.category === 'Pelunasan');
     const modalTransactions = houseTransactions.filter(t => t.type === 'MODAL' || t.category === 'Modal');
@@ -108,7 +104,8 @@ export default function Finance() {
     const totalSalesTelur = filteredSalesLogs.reduce((acc, curr) => acc + curr.total, 0);
 
     // ACCRUAL FIX: Laba Rugi Berbasis Akrual (Pemakaian & Penjualan Terbukon)
-    const totalAccrualIncome = filteredSalesLogs.reduce((acc, curr) => acc + curr.total, 0);
+    // Include all income transactions so Penjualan Afkir and other incomes are counted
+    const totalAccrualIncome = incomeTransactions.reduce((acc, curr) => acc + curr.total, 0);
 
     // Usage of materials (pakan/obat)
     const filteredMutations = isKonsolidasi
@@ -414,7 +411,7 @@ export default function Finance() {
 
         const labaData: [string, number | string, boolean][] = [
             ['PENDAPATAN', '', false],
-            ['  Penjualan Telur', totalPenjualan, false],
+            ['  Penjualan Utama (Telur & Afkir)', totalPenjualan, false],
             ['  Lain-lain (Pendapatan Lainnya)', totalAccrualIncome - totalPenjualan > 0 ? totalAccrualIncome - totalPenjualan : 0, false],
             ['TOTAL PENDAPATAN', totalAccrualIncome, true],
             ['', '', false],

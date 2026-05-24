@@ -12,8 +12,9 @@ import Swal from 'sweetalert2';
 
 import { useHouse } from '../HouseContext';
 import { useFlock } from '../FlockContext';
-import { useGlobalData } from '../GlobalContext';
+import { useGlobalData, ProductionLog } from '../GlobalContext';
 import { useApp } from '../AppContext';
+import { MutationType } from '../types';
 
 // Strain HDP standard by age week (simplified ISA Brown / Lohmann)
 function getStrainStandardHDP(ageWeeks: number): number {
@@ -34,12 +35,13 @@ const MORTALITY_CAUSE_LABELS: Record<MortalityCause, string> = {
 
 export default function Production() {
   const { activeHouse } = useHouse();
-  const { saveProduction, inventory, getCumulativeFCR, productionLogs, farmSettings, getHHP } = useGlobalData();
-  const { updateFlock, getActiveFlockByHouse } = useFlock();
+  const { saveProduction, updateProductionLog, inventory, getCumulativeFCR, productionLogs, farmSettings, getHHP } = useGlobalData();
+  const { updateFlock, getActiveFlockByHouse, addMutation } = useFlock();
   const { user } = useApp();
 
   const [showHistory, setShowHistory] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
+  const [editId, setEditId] = useState<string | null>(null);
   const ITEMS_PER_PAGE = 10;
 
   const activeBatch = getActiveFlockByHouse(activeHouse?.id || '');
@@ -154,6 +156,32 @@ export default function Production() {
     return (feedConsumed * 1000) / activeBatch.currentCount;
   }, [feedConsumed, activeBatch]);
 
+  const handleEdit = (log: ProductionLog) => {
+    setEditId(log.id);
+    const d = new Date(log.date);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setDate(dateStr);
+    setMortality(log.mortality || 0);
+    setMortalityCause(log.mortalityCause || MortalityCause.DISEASE);
+    setFeedConsumed(log.feedConsumed);
+    setFeedInventoryItemId(log.feedInventoryItemId);
+    setDiscardedEggs(log.discardedEggs || 0);
+    if (log.breakdown) {
+      setBreakdown({
+        [EggCategory.BM]: log.breakdown[EggCategory.BM] || 0,
+        [EggCategory.KRC]: log.breakdown[EggCategory.KRC] || 0,
+        [EggCategory.KS]: log.breakdown[EggCategory.KS] || 0,
+        [EggCategory.PELOR]: log.breakdown[EggCategory.PELOR] || 0,
+        [EggCategory.RETAK]: log.breakdown[EggCategory.RETAK] || 0,
+        [EggCategory.PECAH]: log.breakdown[EggCategory.PECAH] || 0,
+        [EggCategory.KRC_RETAK]: log.breakdown[EggCategory.KRC_RETAK] || 0,
+        [EggCategory.KS_RETAK]: log.breakdown[EggCategory.KS_RETAK] || 0,
+      });
+    }
+    setActualEggWeight(log.eggWeight);
+    setShowHistory(false);
+  };
+
   const handleSave = () => {
     if (!eggCount || !feedConsumed || totalBreakdownButir === 0) {
       Swal.fire({ title: 'Data Tidak Lengkap', text: 'Isi total produksi, pakan, dan klasifikasi telur.', icon: 'warning', confirmButtonColor: '#0f172a' });
@@ -191,7 +219,7 @@ export default function Production() {
       if (result.isConfirmed) {
         setIsSaving(true);
         try {
-          await saveProduction({
+          const logData = {
             houseId: activeHouse?.id || '',
             date,
             eggCount,
@@ -206,27 +234,43 @@ export default function Production() {
             totalButir: totalBreakdownButir,
             inputTime: new Date().toISOString(),
             inputBy: user?.name || 'Sistem',
-          });
+          };
 
-          if (mortality > 0 && activeBatch) {
-            updateFlock(activeBatch.id, { currentCount: activeBatch.currentCount - mortality });
-            // Mortality threshold alert
-            const threshold = farmSettings.mortalityAlertThreshold;
-            const mortalityPct = (mortality / activeBatch.currentCount) * 100;
-            if (mortalityPct > threshold) {
-              Swal.fire({
-                title: '⚠️ Mortalitas Melebihi Ambang Batas!',
-                html: `<div class="text-sm"><p>Mortalitas hari ini: <b>${mortality} ekor (${mortalityPct.toFixed(2)}%)</b></p><p>Ambang batas normal: <b>${threshold}%</b></p><p class="text-red-500 font-bold mt-2">Segera periksa kondisi kandang dan konsultasikan ke dokter hewan!</p></div>`,
-                icon: 'warning',
-                confirmButtonColor: '#e11d48',
-              });
-            } else {
-              Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan & inventori diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
-            }
+          if (editId) {
+            await updateProductionLog(editId, logData);
+            Swal.fire({ title: 'Berhasil!', text: 'Data produksi diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
           } else {
-            Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan & inventori diperbarui.', icon: 'success', confirmButtonColor: '#0f172a' });
+            await saveProduction(logData);
+
+            if (mortality > 0 && activeBatch) {
+              await addMutation({
+                houseId: activeHouse?.id || '',
+                date,
+                type: MutationType.MORTALITY,
+                count: mortality,
+                cause: mortalityCause,
+                notes: `Mortalitas Harian - ${MORTALITY_CAUSE_LABELS[mortalityCause]}`
+              });
+
+              // Mortality threshold alert
+              const threshold = farmSettings.mortalityAlertThreshold;
+              const mortalityPct = (mortality / activeBatch.currentCount) * 100;
+              if (mortalityPct > threshold) {
+                Swal.fire({
+                  title: '⚠️ Mortalitas Melebihi Ambang Batas!',
+                  html: `<div class="text-sm"><p>Mortalitas hari ini: <b>${mortality} ekor (${mortalityPct.toFixed(2)}%)</b></p><p>Ambang batas normal: <b>${threshold}%</b></p><p class="text-red-500 font-bold mt-2">Segera periksa kondisi kandang dan konsultasikan ke dokter hewan!</p></div>`,
+                  icon: 'warning',
+                  confirmButtonColor: '#e11d48',
+                });
+              } else {
+                Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan.', icon: 'success', confirmButtonColor: '#0f172a' });
+              }
+            } else {
+              Swal.fire({ title: 'Berhasil!', text: 'Data produksi harian disimpan.', icon: 'success', confirmButtonColor: '#0f172a' });
+            }
           }
 
+          setEditId(null);
           setMortality(0); setFeedConsumed(0); setDiscardedEggs(0); setActualEggWeight(null);
           setBreakdown({ [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0, [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0, [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0 });
         } catch (error: any) {
@@ -242,7 +286,7 @@ export default function Production() {
 
   const handleReset = () => {
     Swal.fire({ title: 'Reset Form?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#e11d48', confirmButtonText: 'Reset' })
-      .then(r => { if (r.isConfirmed) { setMortality(0); setFeedConsumed(0); setDiscardedEggs(0); setBreakdown({ [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0, [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0, [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0 }); } });
+      .then(r => { if (r.isConfirmed) { setEditId(null); setMortality(0); setFeedConsumed(0); setDiscardedEggs(0); setBreakdown({ [EggCategory.BM]: 0, [EggCategory.KRC]: 0, [EggCategory.KS]: 0, [EggCategory.PELOR]: 0, [EggCategory.RETAK]: 0, [EggCategory.PECAH]: 0, [EggCategory.KRC_RETAK]: 0, [EggCategory.KS_RETAK]: 0 }); } });
   };
 
   const houseProdLogs = useMemo(() => productionLogs
@@ -259,7 +303,7 @@ export default function Production() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl md:text-2xl font-black text-slate-900 uppercase tracking-tighter italic">
-            Input Produksi <span className="text-amber-500">{activeHouse?.name}</span>
+            {editId ? 'Edit Produksi' : 'Input Produksi'} <span className="text-amber-500">{activeHouse?.name}</span>
           </h1>
           <p className="text-slate-500 text-[10px] mt-1 uppercase font-bold tracking-widest">
             {activeBatch
@@ -288,7 +332,7 @@ export default function Production() {
               <table className="w-full text-left text-[10px] min-w-max">
                 <thead className="bg-slate-900 text-white sticky top-0">
                   <tr>
-                    {['Tanggal', 'Jam Input', 'Diinput Oleh', 'Telur (butir)', 'Total (butir)', 'Pakan (kg)', 'FCR', 'Mati (ekor)', 'HDP %', 'Catatan'].map(h => (
+                    {['Tanggal', 'Jam Input', 'Diinput Oleh', 'Telur (butir)', 'Total (butir)', 'Pakan (kg)', 'FCR', 'Mati (ekor)', 'HDP %', 'Catatan', 'Aksi'].map(h => (
                       <th key={h} className="px-3 py-3 font-bold uppercase tracking-widest whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -318,11 +362,16 @@ export default function Production() {
                         <td className="px-3 py-3 font-bold text-rose-500">{log.mortality > 0 ? log.mortality : '-'}</td>
                         <td className="px-3 py-3 font-bold">{hdp}%</td>
                         <td className="px-3 py-3 text-slate-400">{log.mortalityCause ? MORTALITY_CAUSE_LABELS[log.mortalityCause] : '-'}</td>
+                        <td className="px-3 py-3">
+                          <button onClick={() => handleEdit(log)} className="text-amber-600 hover:text-amber-800 font-bold uppercase text-[10px] tracking-wider px-2 py-1 border border-amber-200 bg-amber-50 rounded-sm">
+                            Edit
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
                   {houseProdLogs.length === 0 && (
-                    <tr><td colSpan={10} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">Belum ada riwayat produksi</td></tr>
+                    <tr><td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold uppercase tracking-widest">Belum ada riwayat produksi</td></tr>
                   )}
                 </tbody>
               </table>
@@ -426,7 +475,26 @@ export default function Production() {
                 className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
             </div>
 
-            {/* Mortalitas field removed from UI per requirement — still tracked internally */}
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Mortalitas (ekor)</label>
+              <input type="number" min="0" placeholder="0" value={mortality || ''} onChange={e => setMortality(Math.max(0, Number(e.target.value)))}
+                className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500" />
+            </div>
+
+            {mortality > 0 && (
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Penyebab Mortalitas</label>
+                <select
+                  value={mortalityCause}
+                  onChange={e => setMortalityCause(e.target.value as MortalityCause)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                >
+                  {Object.entries(MORTALITY_CAUSE_LABELS).map(([val, label]) => (
+                    <option key={val} value={val}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Telur Afkir/Dibuang</label>
@@ -496,7 +564,7 @@ export default function Production() {
                 className="flex items-center gap-2 lg:gap-3 bg-slate-900 text-white px-6 lg:px-10 py-3 lg:py-4 rounded-sm font-bold text-[10px] lg:text-xs uppercase tracking-[0.2em] hover:bg-slate-800 transition-all shadow-xl disabled:opacity-50"
               >
                 <Save size={16} />
-                <span>{isSaving ? 'Menyimpan...' : 'Simpan Produksi'}</span>
+                <span>{isSaving ? 'Menyimpan...' : editId ? 'Update Produksi' : 'Simpan Produksi'}</span>
               </button>
             </div>
           </div>

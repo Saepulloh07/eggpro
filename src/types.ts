@@ -466,6 +466,7 @@ export interface FarmSettings {
 
   // NEW FEATURES
   workerEggAllowancePerDay: number;  // default 5
+  workerEggAllowanceCategory?: EggCategory; // NEW: Kategori jatah telur
   abnormalEggTolerancePct: number;   // default 2%
   sinkingFundDocPct: number;         // Sinking fund untuk DOC (%)
   sinkingFundHousePct: number;       // Sinking fund untuk Peremajaan (%)
@@ -505,6 +506,7 @@ export const DEFAULT_FARM_SETTINGS: FarmSettings = {
   layerLifeYears: 2,
   layerSalvageValue: 20000000,
   workerEggAllowancePerDay: 5,
+  workerEggAllowanceCategory: EggCategory.BM, // Default to BM (Remban)
   abnormalEggTolerancePct: 2,
   sinkingFundDocPct: 10,
   sinkingFundHousePct: 5,

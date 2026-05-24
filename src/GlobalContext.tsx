@@ -37,6 +37,8 @@ export interface ProductionLog {
   houseId: string;
   date: string;
   eggCount: number;
+  eggWeight?: number;            // kg
+  abnormalEggCount?: number;     // butir
   feedConsumed: number;          // kg
   feedInventoryItemId: string;   // which inventory item was consumed
   mortality: number;
@@ -110,6 +112,7 @@ interface GlobalContextType {
   updateBiosecurityRecord: (id: string, updates: Partial<BiosecurityRecord>) => void;
   deleteBiosecurityRecord: (id: string) => void;
   saveProduction: (log: Omit<ProductionLog, 'id'>) => Promise<void>;
+  updateProductionLog: (id: string, updates: Partial<ProductionLog>) => Promise<void>;
   saveSale: (sale: Omit<SalesLog, 'id'>, targetAccountId?: string) => Promise<void>;
   addTransaction: (tx: Omit<FinancialTransaction, 'id'>) => Promise<string>;
   deleteTransaction: (id: string) => Promise<void>;
@@ -593,6 +596,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  const updateProductionLog = async (id: string, updates: Partial<ProductionLog>) => {
+    const log = productionLogs.find(l => l.id === id);
+    if (log && checkLockAndSwal(log.date)) return;
+    setProductionLogs(prev => prev.map(l => {
+      if (l.id === id) {
+        const updated = { ...l, ...updates };
+        syncRecord('poultry_prod_logs', updated);
+        return updated;
+      }
+      return l;
+    }));
+  };
+
   const saveSale = async (saleData: Omit<SalesLog, 'id'>, targetAccountId?: string) => {
     if (checkLockAndSwal(saleData.date)) return;
     const newSale = { ...saleData, id: generateUUID() };
@@ -1030,7 +1046,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       accounts, journalEntries, journalLines, stockMutations, apArRecords, biosecurityRecords,
       operationalExpenses, sinkingFundAllocations, aparPayments, costAllocations, bankReconciliations,
       addBiosecurityRecord, addBiosecurityRecordsBulk, updateBiosecurityRecord, deleteBiosecurityRecord,
-      saveProduction, saveSale, addTransaction, updateTransaction, deleteTransaction,
+      saveProduction, updateProductionLog, saveSale, addTransaction, updateTransaction, deleteTransaction,
       updateInventory, addInventoryItem, updateInventoryItem, createStockMutation,
       addJournalEntry, addAPARRecord, updateAPARRecord, createOperationalExpense,
       addOperationalExpenseRecord, realizeSinkingFund,
