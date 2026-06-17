@@ -404,7 +404,8 @@ export interface PopulationMutation {
 // Feed Recipe (Formulasi Ransum)
 export interface RecipeIngredient {
   inventoryItemId: string;
-  percentage: number;
+  amountKg: number;        // kg per batch giling
+  percentage?: number;     // @deprecated, untuk data lama
 }
 
 export interface FeedRecipe {

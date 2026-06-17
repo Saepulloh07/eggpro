@@ -42,7 +42,7 @@ import { generateUUID } from '../lib/uuid';
 export default function Inventory() {
   const { activeHouse, houses } = useHouse();
   const { getActiveFlockByHouse } = useFlock();
-  const { inventory, updateInventory, updateInventoryItem, addInventoryItem, createStockMutation, addJournalEntry, addTransaction, addAPARRecord, transactions, productionLogs, farmSettings, accounts, getHouseCashBalance, createInterHouseDebt } = useGlobalData();
+  const { inventory, updateInventory, updateInventoryItem, addInventoryItem, createStockMutation, addJournalEntry, addTransaction, addAPARRecord, transactions, productionLogs, farmSettings, accounts, getHouseCashBalance, createInterHouseDebt, refreshData } = useGlobalData();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -87,6 +87,7 @@ export default function Inventory() {
 
   const handleAddStock = (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!newItem.name || newItem.quantity <= 0) {
       Swal.fire({
         title: 'Input Invalid',
@@ -97,51 +98,87 @@ export default function Inventory() {
       return;
     }
 
+    if (!selectedAccountId) {
+      Swal.fire({
+        title: 'Pilih Sumber Dana',
+        text: 'Mohon pilih kas/bank yang akan digunakan.',
+        icon: 'warning',
+        confirmButtonColor: '#0f172a',
+      });
+      return;
+    }
+
     Swal.fire({
       title: 'Konfirmasi Stok',
-      text: `Tambah ${newItem.quantity} ${newItem.unit} ${newItem.name} ke Gudang Pusat?`,
+      html: `
+      Tambah <b>${newItem.quantity} ${newItem.unit}</b> ${newItem.name}?
+      ${newItem.price > 0
+          ? `<br/>Total: <b>Rp ${(newItem.quantity * newItem.price).toLocaleString(
+            'id-ID'
+          )}</b>`
+          : ''
+        }
+    `,
       icon: 'question',
       showCancelButton: true,
       confirmButtonColor: '#0f172a',
       confirmButtonText: 'Ya, Tambah',
-      cancelButtonText: 'Batal'
+      cancelButtonText: 'Batal',
     }).then(async (result) => {
-      if (result.isConfirmed) {
-        setIsSaving(true);
-        try {
-          const totalCost = newItem.quantity * newItem.price;
+      if (!result.isConfirmed) return;
 
-          // Determine paying house from selected account format: "accId|houseId"
-          const [accId, paidByHouseId] = selectedAccountId.split('|');
-          const finalAcc = accounts.find(a => a.id === accId) || accounts.find(a => a.isCashOrBank) || accounts[0];
-          const payingHouseId = paidByHouseId || activeHouse?.id || '';
+      setIsSaving(true);
 
-          const targetHouseId = payingHouseId;
-          const targetItem = inventory.find(i => i.name.toLowerCase() === newItem.name.toLowerCase() && i.type !== ItemType.EGG_STOCK && i.houseId === targetHouseId);
-          let finalItemId = '';
-          if (targetItem) {
-            finalItemId = targetItem.id;
-            updateInventory(targetItem.id, newItem.quantity);
-            const price = newItem.price > 0 ? ((targetItem.lastPrice * targetItem.quantity) + (newItem.price * newItem.quantity)) / (targetItem.quantity + newItem.quantity) : targetItem.lastPrice;
-            await updateInventoryItem(targetItem.id, { lastPrice: price, paidByHouseId: payingHouseId });
-          } else {
-            finalItemId = generateUUID();
-            await addInventoryItem({
-              ...newItem,
-              id: finalItemId,
-              houseId: targetHouseId,
-              reorderPoint: 100,
-              lastPrice: newItem.price,
-              paidByHouseId: payingHouseId,
-            });
-          }
+      try {
+        const [accId, paidByHouseId] = selectedAccountId.split('|');
+        const payingHouseId = paidByHouseId || activeHouse?.id || '';
 
-          // Check if house has sufficient balance, if not offer inter-house debt
+        const totalCost = newItem.quantity * newItem.price;
+
+        // Simpan melalui backend
+        const apiUrl = import.meta.env.VITE_API_URL || '';
+
+        const res = await fetch(`${apiUrl}/api/transaction/purchase`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            houseId: payingHouseId,
+            itemName: newItem.name,
+            itemType: newItem.type,
+            quantity: newItem.quantity,
+            unitPrice: newItem.price,
+            unit: newItem.unit,
+            reorderPoint: 100,
+            paymentAccountId: accId,
+            date: new Date().toISOString().split('T')[0],
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP Error ${res.status}`);
+        }
+
+        const data = await res.json();
+
+        if (!data.success) {
+          throw new Error(data.error || 'Gagal menyimpan ke database');
+        }
+
+        // Cek kebutuhan talangan antar kandang
+        if (totalCost > 0) {
           const houseBalance = getHouseCashBalance(payingHouseId);
+
           if (houseBalance < totalCost) {
             const deficit = totalCost - Math.max(houseBalance, 0);
-            // Find another house that can cover
-            const otherHouse = houses.find(h => h.id !== payingHouseId && getHouseCashBalance(h.id) >= deficit);
+
+            const otherHouse = houses.find(
+              (h) =>
+                h.id !== payingHouseId &&
+                getHouseCashBalance(h.id) >= deficit
+            );
+
             if (otherHouse) {
               await createInterHouseDebt(
                 payingHouseId,
@@ -151,112 +188,128 @@ export default function Inventory() {
               );
             }
           }
-
-
-          let targetAssetAccountId = 'acc-persediaan-pakan';
-          if (newItem.type === ItemType.MEDICINE || newItem.type === ItemType.VACCINE) {
-            targetAssetAccountId = 'acc-persediaan-obat';
-          } else if (newItem.type === ItemType.OTHER) {
-            targetAssetAccountId = 'acc-peralatan';
-          }
-
-          const journalId = await addJournalEntry(
-            { date: new Date().toISOString().split('T')[0], description: `Pembelian Stok Gudang: ${newItem.name}`, reference: `BELI-${Date.now()}` },
-            [
-              { accountId: targetAssetAccountId, debit: totalCost, credit: 0, houseId: payingHouseId },
-              { accountId: finalAcc.id, debit: 0, credit: totalCost, houseId: payingHouseId }
-            ]
-          );
-
-          await addTransaction({
-            houseId: payingHouseId,
-            date: new Date().toISOString().split('T')[0],
-            description: `Pembelian Stok Gudang Pusat: ${newItem.name}`,
-            qty: `${newItem.quantity} ${newItem.unit}`,
-            price: newItem.price,
-            total: totalCost,
-            account: finalAcc.name,
-            type: 'ASSET', // IMPORTANT: Not an EXPENSE, so it doesn't skew P&L
-            category: 'Persediaan',
-            journalId
-          });
-
-          await createStockMutation({
-            date: new Date().toISOString().split('T')[0],
-            itemId: finalItemId,
-            type: StockMutationType.PURCHASE,
-            quantity: newItem.quantity,
-            unitCost: newItem.price,
-            sourceLocation: 'SUPPLIER',
-            targetLocation: payingHouseId,
-            paidByHouseId: payingHouseId,
-            reference: `BELI-${Date.now()}`,
-            notes: `Dibayar oleh Kandang — ${finalAcc.name}`
-          });
-
-          Swal.fire({
-            title: 'Stok Ditambahkan!',
-            icon: 'success',
-            confirmButtonColor: '#0f172a',
-          });
-          setIsModalOpen(false);
-          setNewItem({ id: '', name: '', quantity: 0, unit: 'kg', price: 0, type: ItemType.RAW_MATERIAL });
-          setSelectedAccountId('');
-        } catch (err: any) {
-          Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
-        } finally {
-          setIsSaving(false);
         }
+
+        // Refresh data dari database
+        await refreshData();
+
+        Swal.fire({
+          title: 'Stok Ditambahkan!',
+          icon: 'success',
+          confirmButtonColor: '#0f172a',
+        });
+
+        setIsModalOpen(false);
+
+        setNewItem({
+          id: '',
+          name: '',
+          quantity: 0,
+          unit: 'kg',
+          price: 0,
+          type: ItemType.RAW_MATERIAL,
+        });
+
+        setSelectedAccountId('');
+      } catch (err: any) {
+        console.error('Purchase Error:', err);
+
+        Swal.fire({
+          title: 'Gagal',
+          text: err.message || 'Gagal menyimpan.',
+          icon: 'error',
+          confirmButtonColor: '#0f172a',
+        });
+      } finally {
+        setIsSaving(false);
       }
     });
   };
 
   const handleTransferStock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!transferData.itemId || !transferData.targetHouseId || transferData.quantity <= 0) return;
+
+    if (
+      !transferData.itemId ||
+      !transferData.targetHouseId ||
+      transferData.quantity <= 0
+    ) {
+      return;
+    }
 
     setIsSaving(true);
+
     try {
-      const sourceItem = inventory.find(i => i.id === transferData.itemId);
+      const sourceItem = inventory.find(
+        (i) => i.id === transferData.itemId
+      );
+
       if (!sourceItem || sourceItem.quantity < transferData.quantity) {
-        Swal.fire('Stok Tidak Cukup', 'Gudang pusat tidak memiliki stok yang cukup.', 'error');
+        Swal.fire(
+          'Stok Tidak Cukup',
+          'Gudang pusat tidak memiliki stok yang cukup.',
+          'error'
+        );
         return;
       }
 
-      // Deduct from Central
-      updateInventory(sourceItem.id, -transferData.quantity);
+      // Transfer stok melalui backend (atomic transaction)
+      const apiUrl = import.meta.env.VITE_API_URL || '';
 
-      // Add to House
-      const houseItem = inventory.find(i => i.name === sourceItem.name && i.houseId === transferData.targetHouseId);
-      if (houseItem) {
-        updateInventory(houseItem.id, transferData.quantity);
-      } else {
-        await addInventoryItem({
-          ...sourceItem,
-          id: undefined as any,
-          houseId: transferData.targetHouseId,
-          quantity: transferData.quantity,
-          paidByHouseId: sourceItem.paidByHouseId // Carry over the original payer
-        });
+      const res = await fetch(
+        `${apiUrl}/api/transaction/transfer-stock`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sourceItemId: sourceItem.id,
+            sourceHouseId: activeHouse?.id,
+            targetHouseId: transferData.targetHouseId,
+            itemName: sourceItem.name,
+            itemType: sourceItem.type,
+            quantity: transferData.quantity,
+            unitCost: sourceItem.lastPrice,
+            unit: sourceItem.unit,
+            paidByHouseId: sourceItem.paidByHouseId,
+            date: new Date().toISOString().split('T')[0],
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error(`HTTP Error ${res.status}`);
       }
 
-      // Create stock mutation log
-      await createStockMutation({
-        date: new Date().toISOString().split('T')[0],
-        itemId: sourceItem.id,
-        type: StockMutationType.TRANSFER,
-        quantity: transferData.quantity,
-        unitCost: sourceItem.lastPrice,
-        sourceLocation: activeHouse?.id || '',
-        targetLocation: transferData.targetHouseId,
-        reference: `TRF-${Date.now()}`,
-        notes: `Distribusi ke Kandang`
-      });
+      const data = await res.json();
+
+      if (!data.success) {
+        throw new Error(
+          data.error || 'Gagal memproses transfer stok'
+        );
+      }
+
+      // Refresh data dari database
+      await refreshData();
 
       setIsTransferModalOpen(false);
-      Swal.fire('Berhasil', 'Stok berhasil dimutasi ke kandang.', 'success');
+
+      Swal.fire({
+        title: 'Berhasil',
+        text: 'Stok berhasil dimutasi ke kandang.',
+        icon: 'success',
+        confirmButtonColor: '#0f172a',
+      });
     } catch (error: any) {
-      Swal.fire('Gagal', error.message || 'Gagal memutasi stok.', 'error');
+      console.error('Transfer Stock Error:', error);
+
+      Swal.fire({
+        title: 'Gagal',
+        text: error.message || 'Gagal memutasi stok.',
+        icon: 'error',
+        confirmButtonColor: '#0f172a',
+      });
     } finally {
       setIsSaving(false);
     }

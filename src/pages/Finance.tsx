@@ -1425,10 +1425,6 @@ export default function Finance() {
                                                         <th className="px-3 py-3">Tgl Jatuh Tempo</th>
                                                         <th className="px-3 py-3">Jenis</th>
                                                         <th className="px-3 py-3">Mitra / Keterangan</th>
-                                                        <th className="px-3 py-3 text-right">0-30 Hari</th>
-                                                        <th className="px-3 py-3 text-right">31-60 Hari</th>
-                                                        <th className="px-3 py-3 text-right">61-90 Hari</th>
-                                                        <th className="px-3 py-3 text-right">&gt;90 Hari</th>
                                                         <th className="px-3 py-3 text-right">Sisa Terutang</th>
                                                         <th className="px-3 py-3 text-center">Status</th>
                                                     </tr>
@@ -1456,11 +1452,6 @@ export default function Finance() {
                                                                         </span>
                                                                     </td>
                                                                     <td className="px-3 py-3 text-slate-600 font-bold">{r.entityName} <br /><span className="text-[8px] text-slate-400 font-normal">{r.description}</span></td>
-
-                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-amber-500">{age0_30 > 0 ? formatCurrency(age0_30) : '-'}</td>
-                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-orange-500">{age31_60 > 0 ? formatCurrency(age31_60) : '-'}</td>
-                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-rose-500">{age61_90 > 0 ? formatCurrency(age61_90) : '-'}</td>
-                                                                    <td className="px-3 py-3 text-right font-mono font-bold text-red-600">{age90Plus > 0 ? formatCurrency(age90Plus) : '-'}</td>
 
                                                                     <td className="px-3 py-3 text-right font-mono font-black text-slate-800">{formatCurrency(r.remainingAmount)} <br /><span className="text-[8px] font-normal text-slate-400 font-sans">Total: {formatCurrency(r.amount)}</span></td>
                                                                     <td className="px-3 py-3 text-center">

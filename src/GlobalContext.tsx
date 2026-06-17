@@ -141,9 +141,9 @@ interface GlobalContextType {
   saveFarmSettings: (settings: Partial<FarmSettings>) => Promise<void>;
   addModalAwal: (amount: number, description?: string, houseId?: string, targetAccountId?: string) => Promise<void>;
   assets: Asset[];
-  addAsset: (asset: Omit<Asset, 'id' | 'maintenanceHistory'>) => void;
+  addAsset: (asset: Omit<Asset, 'id' | 'maintenanceHistory'>) => Promise<void>;
   updateAsset: (id: string, updates: Partial<Asset>) => void;
-  updateAssetStatus: (id: string, status: AssetCondition, user: string, notes?: string) => void;
+  updateAssetStatus: (id: string, status: AssetCondition, user: string, notes?: string) => Promise<void>;
   addAccount: (account: Omit<Account, 'id'>) => void;
   updateAccount: (id: string, account: Partial<Account>) => void;
   deleteAccount: (id: string) => void;
@@ -152,6 +152,11 @@ interface GlobalContextType {
   addTransferKas: (fromAccountId: string, toAccountId: string, amount: number, date: string, notes: string) => Promise<void>;
   closeMonth: (yearMonth: string, inputBy: string) => Promise<void>;
   refreshData: () => Promise<void>;
+  createInterHouseDebt: (debtorHouseId: string, creditorHouseId: string, amount: number, description: string) => Promise<void>;
+  suppliers: any[];
+  addSupplier: (supplierData: any) => Promise<void>;
+  updateSupplier: (id: string, supplierData: any) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
 }
 
 const GlobalContext = createContext<GlobalContextType | undefined>(undefined);
@@ -178,7 +183,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [aparPayments, setAparPayments] = useState<APARPayment[]>([]);
   const [costAllocations, setCostAllocations] = useState<CostAllocation[]>([]);
   const [bankReconciliations, setBankReconciliations] = useState<BankReconciliation[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+
 
   // Removed dangerous useEffect full-syncs to prevent race conditions.
   // We now use incremental sync (syncRecord) within each action.
@@ -211,6 +218,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       loadFromDbOrIndexedDB('poultry_apar_payments', setAparPayments),
       loadFromDbOrIndexedDB('poultry_cost_allocations', setCostAllocations),
       loadFromDbOrIndexedDB('poultry_bank_reconciliations', setBankReconciliations),
+      loadFromDbOrIndexedDB('poultry_suppliers', setSuppliers),
     ]);
   };
 
@@ -246,35 +254,64 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
-  const updateInventory = (id: string, delta: number) => {
-    let success = true;
-    setInventory(prev => prev.map(item => {
-      if (item.id === id) {
-        const newQty = item.quantity + delta;
-        if (newQty < 0) {
-          console.error(`[Inventory] Insufficient stock for ${item.name}. Required: ${Math.abs(delta)}, Available: ${item.quantity}`);
-          success = false;
-          return item; // Block negative stock
+  const updateInventory = (id: string, delta: number): boolean => {
+    let success = false;
+    let itemToSync: InventoryItem | undefined;
+
+    setInventory(prev => {
+      const next = prev.map(item => {
+        if (item.id === id) {
+          const newQty = item.quantity + delta;
+          if (newQty < 0) {
+            console.error(`[Inventory] Insufficient stock for ${item.name}. Required: ${Math.abs(delta)}, Available: ${item.quantity}`);
+            return item;
+          }
+          const updated = { ...item, quantity: newQty };
+          itemToSync = updated;
+          success = true;
+          return updated;
         }
-        return { ...item, quantity: newQty };
-      }
-      return item;
-    }));
+        return item;
+      });
+      return next;
+    });
+
+    // Sync ke DB setelah state update — mencegah stok "reset" saat refresh
+    if (itemToSync) {
+      syncRecord('poultry_inventory_v2', itemToSync);
+    }
+
     return success;
   };
 
   // NEW: Professional Inventory Purchase with Moving Average logic
-  const addInventoryItem = (itemData: Omit<InventoryItem, 'id'>) => {
+  const addInventoryItem = async (itemData: Omit<InventoryItem, 'id'>): Promise<string> => {
+    // Cek item yang sama sudah ada di house yang sama
     const existing = inventory.find(i =>
       i.name.toLowerCase() === itemData.name.toLowerCase() &&
-      (i.houseId === itemData.houseId || (!i.houseId && !itemData.houseId))
+      i.houseId === itemData.houseId &&
+      i.type !== ItemType.EGG_STOCK
     );
-    if (existing) return existing.id;
 
+    if (existing) {
+      // Sudah ada: update quantity + hitung harga rata-rata (Moving Average Cost)
+      const addQty = itemData.quantity || 0;
+      const newQty = existing.quantity + addQty;
+      const newPrice = itemData.lastPrice > 0 && addQty > 0
+        ? ((existing.lastPrice * existing.quantity) + (itemData.lastPrice * addQty)) / newQty
+        : existing.lastPrice;
+
+      const updated: InventoryItem = { ...existing, quantity: newQty, lastPrice: newPrice };
+      setInventory(prev => prev.map(i => i.id === existing.id ? updated : i));
+      await syncRecord('poultry_inventory_v2', updated);
+      return existing.id;
+    }
+
+    // Item baru
     const id = generateUUID();
-    const newItem = { ...itemData, id };
+    const newItem: InventoryItem = { ...itemData, id };
     setInventory(prev => [...prev, newItem]);
-    syncRecord('poultry_inventory_v2', newItem);
+    await syncRecord('poultry_inventory_v2', newItem);
     return id;
   };
 
@@ -287,6 +324,44 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return item;
     }));
+  };
+
+  const createInterHouseDebt = async (
+    debtorHouseId: string,
+    creditorHouseId: string,
+    amount: number,
+    description: string
+  ): Promise<void> => {
+    const today = new Date().toISOString().split('T')[0];
+    const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const id = generateUUID();
+    const aparRecord: APARRecord = {
+      id,
+      type: 'HUTANG',
+      entityName: 'Inter-House Loan',
+      description,
+      amount,
+      remainingAmount: amount,
+      dueDate,
+      createdAt: new Date().toISOString(),
+      status: 'OPEN',
+      houseId: debtorHouseId,
+      isInterHouse: true,
+      fromHouseId: debtorHouseId,
+      toHouseId: creditorHouseId,
+    };
+
+    setApArRecords(prev => [...prev, aparRecord]);
+    syncRecord('poultry_apar', aparRecord);
+
+    addJournalEntry(
+      { date: today, reference: `IHD-${id.slice(-6)}`, description: `Talangan: ${description}` },
+      [
+        { accountId: 'acc-piutang-antar', debit: amount, credit: 0, houseId: creditorHouseId },
+        { accountId: 'acc-hutang-antar', debit: 0, credit: amount, houseId: debtorHouseId },
+      ]
+    );
   };
 
   const createStockMutation = (mutation: Omit<StockMutation, 'id' | 'totalCost'>) => {
@@ -310,119 +385,87 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return journalId;
   };
 
-  const addAPARRecord = async (record: Omit<APARRecord, 'id' | 'createdAt'>) => {
-    const id = generateUUID();
-    const newRecord = { ...record, id, createdAt: new Date().toISOString() };
-    setApArRecords(prev => [...prev, newRecord]);
-    syncRecord('poultry_apar', newRecord);
-
-    // PROFESSIONAL JOURNALING:
-    // When a debt/receivable is recorded, it must be journaled to keep the balance sheet balanced.
-    const today = new Date().toISOString().split('T')[0];
-    const isHutang = record.type === 'HUTANG';
-
-    // Choose appropriate accounts based on description keywords
-    let debitAcc = '';
-    let creditAcc = '';
-
-    if (isHutang) {
-      // Manual Debt: Credit a Liability account, Debit an Expense or Asset account
-      debitAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-persediaan-pakan' :
-        record.description?.toLowerCase().includes('obat') ? 'acc-persediaan-obat' : 'acc-beban-lain';
-      creditAcc = record.description?.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' :
-        record.description?.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
-    } else {
-      // Manual Receivable: Debit an Asset (Receivable) account, Credit a Revenue or Asset account
-      debitAcc = 'acc-piutang-telur';
-      creditAcc = record.description?.toLowerCase().includes('telur') ? 'acc-penjualan-telur' : 'acc-penjualan-lain';
+  // ── addAPARRecord (CREATE) ────────────────────────────────────────────────
+  const addAPARRecord = async (record: {
+    type: 'HUTANG' | 'PIUTANG';
+    houseId?: string;
+    entityName: string;
+    description?: string;
+    amount: number;
+    remainingAmount: number;
+    dueDate?: string;
+    status: string;
+  } | Omit<APARRecord, 'id' | 'createdAt'>) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/apar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Gagal menyimpan AP/AR');
     }
-
-    addJournalEntry({
-      date: today,
-      description: `Pencatatan ${record.type}: ${record.entityName} - ${record.description}`,
-      reference: `REG-${id.slice(-4)}`
-    }, [
-      { accountId: debitAcc, debit: record.amount, credit: 0, houseId: record.houseId },
-      { accountId: creditAcc, debit: 0, credit: record.amount, houseId: record.houseId }
-    ]);
+    const data = await res.json();
+    await refreshData();
+    return data;
   };
 
-  const updateAPARRecord = async (id: string, paymentAmount: number, paymentAccountId?: string, notes?: string) => {
-    let affectedRecord: APARRecord | undefined;
-    let updatedRecord: APARRecord | undefined;
-
-    setApArRecords(prev => prev.map(r => {
-      if (r.id === id) {
-        affectedRecord = r;
-        const newRemaining = Math.max(0, r.remainingAmount - paymentAmount);
-        const newStatus = newRemaining === 0 ? 'CLOSED' : 'PARTIAL';
-        updatedRecord = {
-          ...r,
-          remainingAmount: newRemaining,
-          status: newStatus,
-        };
-        syncRecord('poultry_apar', updatedRecord);
-        return updatedRecord;
-      }
-      return r;
-    }));
-
-    if (affectedRecord && updatedRecord) {
-      const paymentEntry: APARPayment = {
-        id: `pay-${generateUUID()}`,
-        aparRecordId: id,
-        date: new Date().toISOString().split('T')[0],
-        amount: paymentAmount,
-        accountId: paymentAccountId || 'acc-kas',
-        reference: `PAY-${Date.now()}`,
-        notes,
-      };
-      setAparPayments(prev => [...prev, paymentEntry]);
-      syncRecord('poultry_apar_payments', paymentEntry);
-      const r = affectedRecord;
-      const today = new Date().toISOString().split('T')[0];
-      const account = accounts.find(a => a.id === paymentAccountId) || accounts.find(a => a.isCashOrBank) || accounts[0];
-
-      // Create journal entry: 
-      // If HUTANG: Debit Payable (acc-hutang-pakan / acc-hutang-doc), Credit Cash
-      // If PIUTANG: Debit Cash, Credit Receivable (acc-piutang-telur)
-      const isHutang = r.type === 'HUTANG';
-      const payableAccountId = r.description?.toLowerCase().includes('pakan') ? 'acc-hutang-pakan' :
-        r.description?.toLowerCase().includes('doc') ? 'acc-hutang-doc' : 'acc-hutang-dagang';
-      const receivableAccountId = 'acc-piutang-telur';
-
-      const journalId = addJournalEntry({
-        date: today,
-        description: `Pelunasan ${r.type}: ${r.entityName} - ${notes || r.description}`,
-        reference: `PAY-${r.id.slice(-4)}-${Date.now().toString().slice(-4)}`
-      }, [
-        {
-          accountId: isHutang ? payableAccountId : account.id,
-          debit: paymentAmount,
-          credit: 0,
-          houseId: r.houseId
-        },
-        {
-          accountId: isHutang ? account.id : receivableAccountId,
-          debit: 0,
-          credit: paymentAmount,
-          houseId: r.houseId
-        }
-      ]);
-
-      await addTransaction({
-        houseId: r.houseId,
-        date: today,
-        description: `[PELUNASAN] ${r.entityName} - ${notes || r.description}`,
-        qty: '1',
-        price: paymentAmount,
-        total: paymentAmount,
-        account: account.name,
-        type: isHutang ? 'EXPENSE' : 'INCOME',
-        category: 'Pelunasan', // Critical: Categorized as Pelunasan to avoid P&L double-counting
-        journalId
-      });
+  // ── updateAPARRecord (PAY / CICIL) ───────────────────────────────────────
+  const updateAPARRecord = async (
+    id: string,
+    amount: number,
+    accountId: string,
+    notes?: string,
+    reference?: string
+  ) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/apar/${id}/pay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, accountId, notes, reference }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Gagal mencatat pembayaran');
     }
+    const data = await res.json();
+    await refreshData();
+    return data;
+  };
+
+  // ── Supplier CRUD ─────────────────────────────────────────────────────────
+  const addSupplier = async (supplierData: {
+    name: string;
+    category: string;
+    whatsappNumber: string;
+    notes?: string;
+  }) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/suppliers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(supplierData),
+    });
+    if (!res.ok) throw new Error('Gagal menyimpan supplier');
+    await refreshData();
+  };
+
+  const updateSupplier = async (id: string, supplierData: any) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/suppliers/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(supplierData),
+    });
+    if (!res.ok) throw new Error('Gagal memperbarui supplier');
+    await refreshData();
+  };
+
+  const deleteSupplier = async (id: string) => {
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    await fetch(`${apiUrl}/api/suppliers/${id}`, { method: 'DELETE' });
+    await refreshData();
   };
 
   // Record a standalone operational expense with full journal entry
@@ -964,11 +1007,26 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setAccounts(prev => prev.filter(a => a.id !== id));
   };
 
-  const addAsset = (assetData: Omit<Asset, 'id' | 'maintenanceHistory'>) => {
+  const addAsset = async (assetData: Omit<Asset, 'id' | 'maintenanceHistory'>) => {
     const id = generateUUID();
     const newAsset: Asset = { ...assetData, id, maintenanceHistory: [] };
+
+    // Simpan ke backend dulu
+    const apiUrl = import.meta.env.VITE_API_URL || '';
+    const res = await fetch(`${apiUrl}/api/assets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newAsset)
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(`Gagal menyimpan aset: ${errData.error || res.statusText}`);
+    }
+
+    // Baru update state lokal
     setAssets(prev => [...prev, newAsset]);
-    syncRecord('poultry_assets', newAsset);
+    syncRecord('poultry_assets', newAsset); // tetap untuk cache offline
   };
 
   const addCostAllocation = async (allocationData: Omit<CostAllocation, 'id'>) => {
@@ -996,20 +1054,33 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }));
   };
 
-  const updateAssetStatus = (id: string, status: AssetCondition, user: string, notes?: string) => {
-    setAssets(prev => prev.map(asset => {
-      if (asset.id === id) {
-        return {
-          ...asset,
-          condition: status,
-          maintenanceHistory: [
-            { date: new Date().toISOString(), status, user, notes },
-            ...asset.maintenanceHistory
-          ]
-        };
-      }
-      return asset;
-    }));
+  const updateAssetStatus = async (id: string, status: AssetCondition, user: string, notes?: string) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${apiUrl}/api/assets/${id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, user, notes })
+      });
+      if (!res.ok) throw new Error('Gagal mengupdate status aset');
+
+      setAssets(prev => prev.map(asset => {
+        if (asset.id === id) {
+          return {
+            ...asset,
+            condition: status,
+            maintenanceHistory: [
+              { date: new Date().toISOString(), status, user, notes },
+              ...asset.maintenanceHistory
+            ]
+          };
+        }
+        return asset;
+      }));
+    } catch (e) {
+      console.error(e);
+      throw e;
+    }
   };
 
   const addBiosecurityRecord = (data: Omit<BiosecurityRecord, 'id'>) => {
@@ -1057,7 +1128,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       assets, addAsset, updateAsset, updateAssetStatus,
       addAccount, updateAccount, deleteAccount,
       getHouseCashBalance, addInterHouseTransaction, addTransferKas, closeMonth, refreshData,
-      addCostAllocation, addBankReconciliation
+      addCostAllocation, addBankReconciliation, createInterHouseDebt,
+      suppliers, addSupplier, updateSupplier, deleteSupplier
     }}>
       {children}
     </GlobalContext.Provider>
