@@ -60,6 +60,8 @@ export interface SalesLog {
   total: number;
   isFree: boolean;
   customer: string;
+  paymentMethod?: 'CASH' | 'PIUTANG';
+  dueDate?: string;
 }
 
 export interface FinancialTransaction {
@@ -681,19 +683,47 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       || accounts[0];
 
 
-    const txId = await addTransaction({
-      houseId: saleData.houseId,
-      date: saleData.date,
-      description: saleData.isFree
-        ? `Alokasi Telur Gratis: ${saleData.category} - ${saleData.customer || 'Umum'}`
-        : `Penjualan Telur: ${saleData.category} - ${saleData.customer || 'Umum'}`,
-      qty: `${saleData.quantity} butir`,
-      price: saleData.isFree ? 0 : saleData.price,
-      total: saleData.isFree ? 0 : saleData.total,
-      account: saleData.isFree ? 'Pemberian Gratis' : 'Pendapatan Jual Telur',
-      type: 'INCOME',
-      category: saleData.isFree ? 'Free Goods' : 'Penjualan'
-    });
+    let txId = '';
+
+    // PENANGANAN JIKA PEMBAYARAN ADALAH CASH (LUNAS) ATAU FREE
+    if (saleData.paymentMethod !== 'PIUTANG') {
+      txId = await addTransaction({
+        houseId: saleData.houseId,
+        date: saleData.date,
+        description: saleData.isFree
+          ? `Alokasi Telur Gratis: ${saleData.category} - ${saleData.customer || 'Umum'}`
+          : `Penjualan Telur: ${saleData.category} - ${saleData.customer || 'Umum'}`,
+        qty: `${saleData.quantity} butir`,
+        price: saleData.isFree ? 0 : saleData.price,
+        total: saleData.isFree ? 0 : saleData.total,
+        account: saleData.isFree ? 'Pemberian Gratis' : 'Pendapatan Jual Telur',
+        type: 'INCOME',
+        category: saleData.isFree ? 'Free Goods' : 'Penjualan'
+      });
+    } else {
+      // PENANGANAN JIKA PEMBAYARAN ADALAH PIUTANG
+      // Tidak mencatat ke addTransaction (Buku Kas) karena uang belum masuk
+      // Sebaliknya, kita mencatatnya di AP/AR (Hutang & Piutang)
+
+      const aparId = generateUUID();
+      const aparRecord: APARRecord = {
+        id: aparId,
+        type: 'PIUTANG',
+        entityName: saleData.customer || 'Pelanggan Umum',
+        description: `Penjualan (Tempo): ${saleData.category} (${saleData.quantity} qty)`,
+        amount: saleData.total,
+        remainingAmount: saleData.total,
+        dueDate: saleData.dueDate, // Tanggal yang dikirim dari Sales.tsx
+        status: 'OPEN',
+        houseId: saleData.houseId,
+        createdAt: new Date().toISOString()
+      };
+
+      setApArRecords(prev => [...prev, aparRecord]);
+      syncRecord('poultry_apar', aparRecord);
+
+      txId = `PIUTANG-${aparId.slice(-6)}`;
+    }
 
     // Create journal entry
     const isAfkir = saleData.category.toLowerCase().includes('afkir');
@@ -701,14 +731,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const revenueAccount = isAfkir ? 'acc-penjualan-afkir' : isLimbah ? 'acc-penjualan-kotoran' : 'acc-penjualan-telur';
 
     if (!saleData.isFree && saleData.total > 0) {
+      // Jika Piutang, Debit-nya adalah akun Piutang Usaha, bukan Akun Kas (selectedAcc)
+      const debitAccountId = saleData.paymentMethod === 'PIUTANG'
+        ? 'acc-piutang-usaha' // Pastikan kode akun ini ada/sesuai dengan daftar akun Anda, biasanya 'acc-piutang-usaha' atau akun piutang default lainnya
+        : selectedAcc.id;
+
       addJournalEntry(
         {
           date: saleData.date,
-          description: `Penjualan ${saleData.category}`,
+          description: saleData.paymentMethod === 'PIUTANG'
+            ? `Penjualan Tempo ${saleData.category} (${saleData.customer})`
+            : `Penjualan ${saleData.category}`,
           reference: txId
         },
         [
-          { accountId: selectedAcc.id, debit: saleData.total, credit: 0, houseId: saleData.houseId },
+          { accountId: debitAccountId, debit: saleData.total, credit: 0, houseId: saleData.houseId },
           { accountId: revenueAccount, debit: 0, credit: saleData.total, houseId: saleData.houseId }
         ]
       );

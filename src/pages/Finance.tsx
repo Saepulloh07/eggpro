@@ -42,6 +42,7 @@ export default function Finance() {
     const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
     const [selectedApArId, setSelectedApArId] = useState<string | null>(null);
     const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+    const [aparFormType, setAparFormType] = useState<'HUTANG' | 'PIUTANG'>('HUTANG');
     const [isSaving, setIsSaving] = useState(false);
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
 
@@ -355,7 +356,7 @@ export default function Finance() {
             const ws = wb.addWorksheet(name);
             ws.columns = [6, 14, 32, 14, 18, 18, 14, 20].map(w => ({ width: w }));
             addSheetTitle(ws, title, subtitle, 8);
-            const headers = ['No', 'Tanggal Transaksi', 'Barang / Jasa', 'Qty', 'Harga Satuan (Rp)', 'Total Harga (Rp)', 'Tgl Bayar', 'Nama Request'];
+            const headers = ['No', 'Tanggal Transaksi', 'Barang / Jasa', 'Qty', 'Harga Satuan (Rp)', 'Total Harga (Rp)', 'Tgl Bayar', 'Keterangan'];
             ws.getRow(4).values = headers;
             headers.forEach((_, ci) => styleHeader(ws.getCell(4, ci + 1), headerBg));
             ws.getRow(4).height = 20;
@@ -1228,7 +1229,7 @@ export default function Finance() {
                                                         <th className="px-3 py-3 text-right">Harga Satuan</th>
                                                         <th className="px-3 py-3 text-right">Total Harga</th>
                                                         <th className="px-3 py-3">Tgl Bayar</th>
-                                                        <th className="px-3 py-3">Nama Request</th>
+                                                        <th className="px-3 py-3">Ket</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="text-[10px] divide-y divide-slate-50">
@@ -1282,7 +1283,7 @@ export default function Finance() {
                                                         <th className="px-3 py-3 text-right">Harga Satuan</th>
                                                         <th className="px-3 py-3 text-right">Total Harga</th>
                                                         <th className="px-3 py-3">Tgl Bayar</th>
-                                                        <th className="px-3 py-3">Nama Request</th>
+                                                        <th className="px-3 py-3">Ket</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="text-[10px] divide-y divide-slate-50">
@@ -1978,7 +1979,7 @@ export default function Finance() {
                 </form>
             </Modal>
 
-            <Modal isOpen={isApArModalOpen} onClose={() => setIsApArModalOpen(false)} title="Tambah Tagihan Hutang / Piutang">
+            <Modal isOpen={isApArModalOpen} onClose={() => setIsApArModalOpen(false)} title="Tambah Hutang / Piutang">
                 <form onSubmit={async (e) => {
                     e.preventDefault();
                     if (isSaving) return;
@@ -1987,16 +1988,17 @@ export default function Finance() {
                         const fd = new FormData(e.target as HTMLFormElement);
                         await addAPARRecord({
                             type: fd.get('type') as 'HUTANG' | 'PIUTANG',
+                            houseId: activeHouse?.id,
                             entityName: fd.get('entityName') as string,
                             description: fd.get('description') as string,
                             amount: Number(fd.get('amount')),
                             remainingAmount: Number(fd.get('amount')),
                             dueDate: fd.get('dueDate') as string,
                             status: 'OPEN',
-                            houseId: activeHouse?.id,
+                            accountId: fd.get('accountId') as string,
                         });
                         setIsApArModalOpen(false);
-                        Swal.fire({ title: 'Berhasil!', text: 'Tagihan berhasil ditambahkan.', icon: 'success', confirmButtonColor: '#0f172a', timer: 1500, showConfirmButton: false });
+                        Swal.fire('Berhasil', 'Tagihan berhasil disimpan.', 'success');
                     } catch (err: any) {
                         Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
                     } finally {
@@ -2006,7 +2008,13 @@ export default function Finance() {
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Jenis</label>
-                            <select name="type" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500">
+                            <select
+                                name="type"
+                                required
+                                value={aparFormType}
+                                onChange={(e) => setAparFormType(e.target.value as 'HUTANG' | 'PIUTANG')}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                            >
                                 <option value="HUTANG">HUTANG (AP)</option>
                                 <option value="PIUTANG">PIUTANG (AR)</option>
                             </select>
@@ -2023,6 +2031,40 @@ export default function Finance() {
                     <div>
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Total Tagihan (Rp)</label>
                         <input name="amount" type="number" min="1" required className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 font-mono" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">
+                            {aparFormType === 'HUTANG' ? 'Akun Aset / Beban yang Diterima' : 'Akun Pendapatan / Piutang'}
+                        </label>
+                        <select
+                            name="accountId"
+                            required
+                            className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500"
+                        >
+                            <option value="">Pilih Akun</option>
+                            {aparFormType === 'HUTANG'
+                                ? accounts
+                                    .filter(a => a.category === 'ASSET' || a.category === 'EXPENSE')
+                                    .filter(a => !a.isCashOrBank)
+                                    .map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.code} - {acc.name}
+                                        </option>
+                                    ))
+                                : accounts
+                                    .filter(a => a.category === 'REVENUE' || a.isCashOrBank)
+                                    .map(acc => (
+                                        <option key={acc.id} value={acc.id}>
+                                            {acc.code} - {acc.name}
+                                        </option>
+                                    ))
+                            }
+                        </select>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                            {aparFormType === 'HUTANG'
+                                ? 'Pilih aset/beban yang diterima (cth: Persediaan Pakan). Kas akan berkurang saat hutang dibayar.'
+                                : 'Pilih akun pendapatan atau kas yang relevan dengan piutang ini.'}
+                        </p>
                     </div>
                     <div>
                         <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Keterangan</label>

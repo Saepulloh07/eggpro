@@ -27,12 +27,6 @@ const MUTATION_TYPE_CONFIG = {
     color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
     desc: 'Penambahan populasi dari pembelian DOC baru.'
   },
-  [MutationType.TRANSFER]: {
-    label: 'Mutasi Kandang',
-    icon: ArrowRightLeft,
-    color: 'text-blue-600 bg-blue-50 border-blue-200',
-    desc: 'Pemindahan populasi antar kandang.'
-  },
   [MutationType.MORTALITY]: {
     label: 'Mortalitas',
     icon: Skull,
@@ -50,7 +44,7 @@ const MUTATION_TYPE_CONFIG = {
 export default function Population() {
   const { activeHouse, houses } = useHouse();
   const { flocks, mutations, addMutation, deleteMutation, getActiveFlockByHouse } = useFlock();
-  const { inventory, updateInventory, createStockMutation } = useGlobalData();
+  const { inventory, updateInventory, createStockMutation, addTransaction, addJournalEntry } = useGlobalData();
   const activeFlock = getActiveFlockByHouse(activeHouse?.id || '');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -128,7 +122,7 @@ export default function Population() {
     Swal.fire({ title: 'Tersimpan!', icon: 'success', timer: 1500, showConfirmButton: false });
   };
 
-  const handleSavePulletFeed = () => {
+  const handleSavePulletFeed = async () => { // Tambahkan async
     const feedItem = inventory.find(i => i.id === pulletForm.feedItemId);
     if (!feedItem) {
       Swal.fire({ title: 'Data Tidak Lengkap', text: 'Silakan pilih jenis pakan terlebih dahulu.', icon: 'warning', confirmButtonColor: '#0f172a' });
@@ -148,7 +142,10 @@ export default function Population() {
       return;
     }
 
-    // Process deduction and stock mutation record
+    const refId = `PULLET-FEED-${Date.now()}`;
+    const totalCost = pulletForm.count * (feedItem.lastPrice || 0);
+
+    // 1. Process deduction and stock mutation record (Logika Lama)
     updateInventory(feedItem.id, -pulletForm.count);
     createStockMutation({
       date: pulletForm.date,
@@ -157,14 +154,46 @@ export default function Population() {
       quantity: pulletForm.count,
       unitCost: feedItem.lastPrice || 0,
       sourceLocation: activeHouse?.id || '',
-      reference: `PULLET-FEED-${Date.now()}`,
+      reference: refId,
       notes: `Pemberian Pakan Pullet: ${pulletForm.notes || '-'}`
     });
+
+    // 2. LOGIKA BARU: Catat ke Modul Akuntansi & Keuangan
+    try {
+      // Jurnal Akuntansi (Double-Entry: Beban Bertambah, Persediaan Berkurang)
+      const journalId = await addJournalEntry(
+        {
+          date: pulletForm.date,
+          description: `Pemakaian Pakan Pullet: ${feedItem.name} (${pulletForm.count} kg)`,
+          reference: refId
+        },
+        [
+          { accountId: 'acc-beban-pakan', debit: totalCost, credit: 0, houseId: activeHouse?.id },
+          { accountId: 'acc-persediaan-pakan', debit: 0, credit: totalCost, houseId: activeHouse?.id }
+        ]
+      );
+
+      // Transaksi Buku Kas (Supaya muncul di tabel Pengeluaran Bahan)
+      await addTransaction({
+        houseId: activeHouse?.id,
+        date: pulletForm.date,
+        description: `Pemakaian Pakan Pullet: ${feedItem.name}`,
+        qty: `${pulletForm.count} kg`,
+        price: feedItem.lastPrice || 0,
+        total: totalCost,
+        account: 'Persediaan', // Menggunakan akun persediaan karena tidak memotong kas baru
+        type: 'EXPENSE',
+        category: 'Pemakaian Pakan', // Kategori agar masuk report Laba-Rugi
+        journalId
+      });
+    } catch (error) {
+      console.error("Gagal mencatat transaksi keuangan pakan pullet", error);
+    }
 
     setIsPulletModalOpen(false);
     Swal.fire({
       title: 'Berhasil!',
-      text: `Pemberian pakan ${feedItem.name} sebanyak ${pulletForm.count} kg berhasil dicatat.`,
+      text: `Pemberian pakan ${feedItem.name} sebanyak ${pulletForm.count} kg berhasil dicatat di stok dan jurnal keuangan.`,
       icon: 'success',
       confirmButtonColor: '#0f172a'
     });
@@ -419,19 +448,6 @@ export default function Population() {
                 className="w-full bg-slate-50 border border-slate-200 px-3 py-2 text-sm font-bold focus:outline-none focus:border-amber-500" />
             </div>
           </div>
-
-          {selectedType === MutationType.TRANSFER && (
-            <div>
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Pindah Ke Kandang</label>
-              <select value={form.targetHouseId} onChange={e => setForm({ ...form, targetHouseId: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 px-3 py-2 text-sm font-bold focus:outline-none focus:border-amber-500">
-                <option value="">Pilih Kandang...</option>
-                {houses.filter(h => h.id !== activeHouse?.id).map(h => (
-                  <option key={h.id} value={h.id}>{h.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {(selectedType === MutationType.ARRIVAL || selectedType === MutationType.CULLING) && (
             <div>

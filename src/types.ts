@@ -535,7 +535,7 @@ export const DEFAULT_ACCOUNTS: Account[] = [
   { id: 'acc-ternak', code: '1-2400', name: 'Ternak (Ayam Layer)', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
   { id: 'acc-akum-ternak', code: '1-2401', name: 'Akm. Penyusutan Ternak', category: AccountCategory.ASSET, isCashOrBank: false, isSystem: true },
   // ── LIABILITAS (2-1xxx) ──
-  { id: 'acc-hutang-usaha', code: '2-1100', name: 'Hutang Usaha (Supplier)', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
+  { id: 'acc-hutang-usaha', code: '2-1100', name: 'Hutang Usaha', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
   { id: 'acc-hutang-antar', code: '2-1200', name: 'Hutang Antar Kandang', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
   { id: 'acc-hutang-gaji', code: '2-1300', name: 'Hutang Gaji', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },
   { id: 'acc-hutang-bank', code: '2-2100', name: 'Hutang Bank', category: AccountCategory.LIABILITY, isCashOrBank: false, isSystem: true },

@@ -4,12 +4,12 @@
  */
 
 import React, { useState } from 'react';
-import { 
-  ShoppingCart, 
-  Plus, 
-  Trash2, 
-  DollarSign, 
-  Tag, 
+import {
+  ShoppingCart,
+  Plus,
+  Trash2,
+  DollarSign,
+  Tag,
   History,
   Info,
   Layers,
@@ -22,8 +22,6 @@ import { ItemType, EggCategory } from '../types';
 import { formatCurrency, getEggCategoryRange, cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import Swal from 'sweetalert2';
-
-// Master prices are now loaded from global context.
 
 import { useHouse } from '../HouseContext';
 import { useGlobalData } from '../GlobalContext';
@@ -39,6 +37,9 @@ export default function Sales() {
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // State baru untuk Piutang
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'PIUTANG'>('CASH');
+  const [dueDate, setDueDate] = useState<string>('');
 
   // Load master prices from FarmSettings
   const masterPrices = farmSettings.masterPrices || [];
@@ -46,7 +47,6 @@ export default function Sales() {
   const currentPrice = selectedPriceObj?.price || 0;
 
   // ── Egg Stock Lookup ─────────────────────────────────────────────────────────
-  // Find the stock inventory item for the currently selected category
   const activeItemStock = inventory.find(
     i => i.houseId === activeHouse?.id && (
       (i.type === ItemType.EGG_STOCK && i.eggCategory === activeCategory) ||
@@ -121,12 +121,32 @@ export default function Sales() {
       return;
     }
 
+    // Validasi Pembayaran (Khusus Non-Free)
+    if (!isFree) {
+      if (!selectedAccountId) {
+        Swal.fire({ title: 'Input Invalid', text: 'Pilih rekening penerima dana!', icon: 'warning', confirmButtonColor: '#0f172a' });
+        return;
+      }
+
+      if (paymentMethod === 'PIUTANG') {
+        if (!customerName.trim()) {
+          Swal.fire({ title: 'Input Invalid', text: 'Nama pembeli (penghutang) wajib diisi untuk transaksi Piutang!', icon: 'warning', confirmButtonColor: '#0f172a' });
+          return;
+        }
+        if (!dueDate) {
+          Swal.fire({ title: 'Input Invalid', text: 'Tanggal jatuh tempo wajib diisi untuk transaksi Piutang!', icon: 'warning', confirmButtonColor: '#0f172a' });
+          return;
+        }
+      }
+    }
+
     Swal.fire({
       title: 'Selesaikan Transaksi?',
       html: `
         <div class="text-left space-y-2 text-sm">
           <p><b>Produk:</b> ${activeCategory.replace('_', ' ')}</p>
           <p><b>Jumlah:</b> ${quantity.toLocaleString()} Butir</p>
+          <p><b>Metode:</b> ${isFree ? 'Gratis' : (paymentMethod === 'PIUTANG' ? `Piutang (Tempo: ${new Date(dueDate).toLocaleDateString('id-ID')})` : 'Kas / Lunas')}</p>
           <p><b>Total:</b> ${isFree ? 'FREE' : formatCurrency(totalPrice)}</p>
         </div>
       `,
@@ -144,20 +164,27 @@ export default function Sales() {
         setIsSaving(true);
         try {
           await saveSale({
-              houseId: activeHouse?.id || '',
-              date: new Date().toISOString().split('T')[0],
-              category: activeCategory,
-              quantity,
-              price: currentPrice,
-              total: totalPrice,
-              isFree,
-              customer: customerName.trim() || 'Umum'
+            houseId: activeHouse?.id || '',
+            date: new Date().toISOString().split('T')[0],
+            category: activeCategory,
+            quantity,
+            price: currentPrice,
+            total: totalPrice,
+            isFree,
+            customer: customerName.trim() || 'Umum',
+            // Menyisipkan data piutang agar bisa ditangkap oleh modul AP/AR (Hutang Piutang)
+            paymentMethod,
+            dueDate: paymentMethod === 'PIUTANG' ? dueDate : undefined
           }, selectedAccountId);
 
           Swal.fire({ title: 'Transaksi Berhasil!', text: `Penjualan ${quantity.toLocaleString()} ${activePriceUnit} ${activeCategory} berhasil dicatat.`, icon: 'success', confirmButtonColor: '#0f172a' });
+
+          // Reset form
           setQuantity(0);
           setIsFree(false);
           setCustomerName('');
+          setPaymentMethod('CASH');
+          setDueDate('');
         } catch (err: any) {
           Swal.fire('Gagal', err.message || 'Gagal menyimpan.', 'error');
         } finally {
@@ -166,7 +193,6 @@ export default function Sales() {
       }
     });
   };
-
 
   return (
     <div className="space-y-8 pb-20">
@@ -181,15 +207,15 @@ export default function Sales() {
         <div className="lg:col-span-2 space-y-6 lg:space-y-8">
           <div className="bg-white p-4 lg:p-8 border border-slate-200 shadow-sm relative">
             <h3 className="font-bold text-xs lg:text-sm text-slate-700 mb-6 lg:mb-8 flex items-center uppercase tracking-widest">
-                <ShoppingCart className="mr-2 text-amber-500" size={16} />
-                Input Transaksi Baru
+              <ShoppingCart className="mr-2 text-amber-500" size={16} />
+              Input Transaksi Baru
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
               <div className="space-y-6">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-3">Pilih Kategori Produk</label>
-                  
+
                   {/* Category 1: PRODUK UTAMA (TELUR) */}
                   <div className="mb-4">
                     <p className="text-[9px] font-black uppercase tracking-wider text-amber-500 mb-2 italic">🥚 Produk Utama (Telur)</p>
@@ -204,13 +230,13 @@ export default function Sales() {
                         const stockQty = catStock ? catStock.quantity : 0;
                         const hasStock = stockQty > 0;
                         return (
-                          <button 
+                          <button
                             key={p.id}
                             onClick={() => setActiveCategory(p.name)}
                             className={cn(
                               "p-3 lg:p-4 rounded-sm border text-left transition-all relative overflow-hidden",
-                              activeCategory === p.name 
-                                ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200" 
+                              activeCategory === p.name
+                                ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200"
                                 : (hasStock ? "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100" : "bg-slate-100 border-slate-200 text-slate-400 grayscale")
                             )}
                           >
@@ -244,13 +270,13 @@ export default function Sales() {
                         const stockQty = catStock ? catStock.quantity : 0;
                         const hasStock = stockQty > 0;
                         return (
-                          <button 
+                          <button
                             key={p.id}
                             onClick={() => setActiveCategory(p.name)}
                             className={cn(
                               "p-3 lg:p-4 rounded-sm border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[68px]",
-                              activeCategory === p.name 
-                                ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200" 
+                              activeCategory === p.name
+                                ? "bg-slate-900 border-slate-900 text-white shadow-md shadow-slate-200"
                                 : (hasStock ? "bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100" : "bg-slate-100 border-slate-200 text-slate-400 grayscale")
                             )}
                           >
@@ -272,33 +298,36 @@ export default function Sales() {
                 </div>
 
                 <div className="bg-slate-50 p-4 border border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                        <div className={cn("p-2 rounded-sm bg-white border border-slate-200 shadow-sm", isFree && "bg-slate-900 text-white")}>
-                            <Gift size={16} />
-                        </div>
-                        <div>
-                            <p className="text-xs font-bold text-slate-900">Alokasi Free (Warga)</p>
-                            <p className={cn(
-                                "text-[10px] font-medium italic",
-                                freeGoodsLimitInfo.remaining > 0 ? "text-slate-400" : "text-rose-500"
-                            )}>
-                                Sisa Batas: {Math.floor(freeGoodsLimitInfo.remaining).toLocaleString()} butir
-                            </p>
-                        </div>
-
+                  <div className="flex items-center space-x-3">
+                    <div className={cn("p-2 rounded-sm bg-white border border-slate-200 shadow-sm", isFree && "bg-slate-900 text-white")}>
+                      <Gift size={16} />
                     </div>
-                    <button 
-                        onClick={() => setIsFree(!isFree)}
-                        className={cn(
-                            "w-10 h-5 rounded-full relative transition-colors duration-200",
-                            isFree ? "bg-amber-500" : "bg-slate-200"
-                        )}
-                    >
-                        <div className={cn(
-                            "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 shadow-sm",
-                            isFree ? "translate-x-5" : "translate-x-0"
-                        )} />
-                    </button>
+                    <div>
+                      <p className="text-xs font-bold text-slate-900">Alokasi Free (Warga)</p>
+                      <p className={cn(
+                        "text-[10px] font-medium italic",
+                        freeGoodsLimitInfo.remaining > 0 ? "text-slate-400" : "text-rose-500"
+                      )}>
+                        Sisa Batas: {Math.floor(freeGoodsLimitInfo.remaining).toLocaleString()} butir
+                      </p>
+                    </div>
+
+                  </div>
+                  <button
+                    onClick={() => {
+                      setIsFree(!isFree);
+                      if (!isFree) setPaymentMethod('CASH'); // Reset payment method saat mode free aktif
+                    }}
+                    className={cn(
+                      "w-10 h-5 rounded-full relative transition-colors duration-200",
+                      isFree ? "bg-amber-500" : "bg-slate-200"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform duration-200 shadow-sm",
+                      isFree ? "translate-x-5" : "translate-x-0"
+                    )} />
+                  </button>
                 </div>
               </div>
 
@@ -336,48 +365,96 @@ export default function Sales() {
 
                 {/* Customer name */}
                 <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Nama Pembeli</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">
+                    Nama Pembeli
+                    {paymentMethod === 'PIUTANG' && !isFree && <span className="text-rose-500 ml-1 text-sm">*</span>}
+                  </label>
                   <input
                     type="text"
-                    placeholder="Opsional (misal: Pak Budi)"
+                    placeholder={paymentMethod === 'PIUTANG' && !isFree ? "Wajib diisi (misal: Pak Budi)" : "Opsional (misal: Pak Budi)"}
                     value={customerName}
                     onChange={e => setCustomerName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-medium focus:outline-none focus:border-amber-500 transition-all"
+                    className={cn(
+                      "w-full bg-slate-50 border rounded-sm px-4 py-3 text-sm font-medium focus:outline-none focus:border-amber-500 transition-all",
+                      paymentMethod === 'PIUTANG' && !isFree && !customerName.trim() ? "border-rose-300" : "border-slate-200"
+                    )}
                   />
                 </div>
 
                 {!isFree && (
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Terima ke Rekening</label>
-                    <select
-                      required
-                      value={selectedAccountId}
-                      onChange={(e) => setSelectedAccountId(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 transition-all"
-                    >
-                      <option value="">Pilih Rekening Penerima</option>
-                      {accounts.filter(a => a.isCashOrBank).map(a => (
-                        <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
-                      ))}
-                    </select>
-                  </div>
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Payment Method */}
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Metode Bayar</label>
+                        <select
+                          value={paymentMethod}
+                          onChange={(e) => {
+                            setPaymentMethod(e.target.value as 'CASH' | 'PIUTANG');
+                            if (e.target.value === 'CASH') setDueDate('');
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 transition-all"
+                        >
+                          <option value="CASH">Cash / Transfer</option>
+                          <option value="PIUTANG">Piutang (Tempo)</option>
+                        </select>
+                      </div>
+
+                      {/* Select Account */}
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">Pilih Rekening</label>
+                        <select
+                          required
+                          value={selectedAccountId}
+                          onChange={(e) => setSelectedAccountId(e.target.value)}
+                          className={cn(
+                            "w-full bg-slate-50 border rounded-sm px-4 py-3 text-sm font-bold focus:outline-none focus:border-amber-500 transition-all",
+                            !selectedAccountId ? "border-rose-300" : "border-slate-200"
+                          )}
+                        >
+                          <option value="">Rekening Penerima</option>
+                          {accounts.filter(a => a.isCashOrBank).map(a => (
+                            <option key={a.id} value={a.id}>{a.name} ({a.code})</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Due Date (Only visible if Piutang) */}
+                    {paymentMethod === 'PIUTANG' && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2 mt-4">
+                          Tanggal Jatuh Tempo <span className="text-rose-500 ml-1 text-sm">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={dueDate}
+                          onChange={(e) => setDueDate(e.target.value)}
+                          className={cn(
+                            "w-full bg-slate-50 border rounded-sm px-4 py-3 text-sm font-medium focus:outline-none focus:border-amber-500 transition-all",
+                            !dueDate ? "border-rose-300" : "border-slate-200"
+                          )}
+                        />
+                      </motion.div>
+                    )}
+                  </>
                 )}
 
                 <div className="bg-slate-900 p-5 text-white shadow-xl relative overflow-hidden border border-slate-800">
-                    <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none transform translate-x-4 -translate-y-4">
-                        <DollarSign size={60} lg:size={80} />
-                    </div>
-                    <div className="flex justify-between items-center mb-2 lg:mb-3">
-                        <span className="text-slate-400 text-[9px] lg:text-[10px] font-bold uppercase tracking-[0.2em]">Kalkulasi Harga</span>
-                        <div className="px-1.5 py-0.5 bg-slate-800 rounded-sm text-[7px] lg:text-[8px] font-bold uppercase border border-slate-700 tracking-tighter">Real-time Est.</div>
-                    </div>
-                    <div className="text-2xl lg:text-3xl font-black italic mb-1 lg:mb-2 tracking-tighter">
-                        {isFree ? "GRATIS / FREE" : formatCurrency(totalPrice)}
-                    </div>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center">
-                       <span className="mr-2">Rate /unit:</span>
-                       <span className="text-amber-500 italic">{formatCurrency(currentPrice)}</span>
-                    </p>
+                  <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none transform translate-x-4 -translate-y-4">
+                    <DollarSign size={60} lg:size={80} />
+                  </div>
+                  <div className="flex justify-between items-center mb-2 lg:mb-3">
+                    <span className="text-slate-400 text-[9px] lg:text-[10px] font-bold uppercase tracking-[0.2em]">Kalkulasi Harga</span>
+                    <div className="px-1.5 py-0.5 bg-slate-800 rounded-sm text-[7px] lg:text-[8px] font-bold uppercase border border-slate-700 tracking-tighter">Real-time Est.</div>
+                  </div>
+                  <div className="text-2xl lg:text-3xl font-black italic mb-1 lg:mb-2 tracking-tighter">
+                    {isFree ? "GRATIS / FREE" : formatCurrency(totalPrice)}
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center">
+                    <span className="mr-2">Rate /unit:</span>
+                    <span className="text-amber-500 italic">{formatCurrency(currentPrice)}</span>
+                  </p>
                 </div>
 
                 <button
@@ -399,8 +476,8 @@ export default function Sales() {
 
           <div className="bg-white border border-slate-200 overflow-hidden shadow-sm">
             <div className="p-4 lg:p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <h3 className="font-bold text-[9px] lg:text-[10px] uppercase tracking-widest text-slate-700">Histori Penjualan Terakhir</h3>
-                <button className="text-slate-400 hover:text-slate-900"><History size={16} /></button>
+              <h3 className="font-bold text-[9px] lg:text-[10px] uppercase tracking-widest text-slate-700">Histori Penjualan Terakhir</h3>
+              <button className="text-slate-400 hover:text-slate-900"><History size={16} /></button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -424,12 +501,19 @@ export default function Sales() {
                       <td className="px-6 py-4 text-xs font-bold text-slate-900">{sale.quantity.toLocaleString()} Butir</td>
                       <td className="px-6 py-4 text-xs font-bold text-slate-900 text-right italic">{sale.isFree ? 'FREE' : formatCurrency(sale.total)}</td>
                       <td className="px-6 py-4 text-center">
-                        <span className="bg-emerald-50 text-emerald-600 text-[10px] font-black uppercase px-2 py-1 rounded-sm border border-emerald-100">Paid</span>
+                        <span className={cn(
+                          "text-[10px] font-black uppercase px-2 py-1 rounded-sm border",
+                          (sale as any).paymentMethod === 'PIUTANG'
+                            ? "bg-amber-50 text-amber-600 border-amber-100"
+                            : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                        )}>
+                          {(sale as any).paymentMethod === 'PIUTANG' ? 'Piutang' : 'Paid'}
+                        </span>
                       </td>
                     </tr>
                   ))}
                   {salesLogs.length === 0 && (
-                      <tr><td colSpan={5} className="px-6 py-8 text-center text-[10px] text-slate-400 font-bold uppercase">Belum ada histori penjualan</td></tr>
+                    <tr><td colSpan={5} className="px-6 py-8 text-center text-[10px] text-slate-400 font-bold uppercase">Belum ada histori penjualan</td></tr>
                   )}
                 </tbody>
               </table>
@@ -439,53 +523,53 @@ export default function Sales() {
 
         {/* Sidebar info */}
         <div className="space-y-6 lg:space-y-8">
-            <div className="bg-slate-900 text-white p-6 lg:p-8 shadow-2xl relative overflow-hidden border border-slate-800">
-                <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none transform translate-x-12 -translate-y-8">
-                    <History size={160} />
-                </div>
-                <h3 className="text-amber-500 text-[10px] font-black uppercase tracking-[0.25em] mb-8">Financial Summary</h3>
-                <div className="space-y-8">
-                    {(() => {
-                        const today = new Date().toISOString().split('T')[0];
-                        const houseSales = salesLogs.filter(s => s.houseId === activeHouse?.id && s.date === today);
-                        const totalSold = houseSales.reduce((acc, s) => acc + s.quantity, 0);
-                        const totalIncome = houseSales.reduce((acc, s) => acc + s.total, 0);
-                        
-                        return (
-                            <>
-                                <div>
-                                    <p className="text-3xl font-black italic tracking-tighter">{totalSold.toLocaleString()} Butir</p>
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Total Terjual (Today)</p>
-                                </div>
-                                <div>
-                                    <p className="text-3xl font-black italic text-slate-600 tracking-tighter">{farmSettings.wasteFreePercentage}%</p>
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Target Waste & Free Goods</p>
-                                </div>
-                                <div className="pt-8 border-t border-slate-800">
-                                    <p className="text-3xl font-black text-emerald-400 italic tracking-tighter">{formatCurrency(totalIncome)}</p>
-                                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Cashflow {activeHouse?.name} Today</p>
-                                </div>
-                            </>
-                        );
-                    })()}
-                </div>
+          <div className="bg-slate-900 text-white p-6 lg:p-8 shadow-2xl relative overflow-hidden border border-slate-800">
+            <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none transform translate-x-12 -translate-y-8">
+              <History size={160} />
             </div>
+            <h3 className="text-amber-500 text-[10px] font-black uppercase tracking-[0.25em] mb-8">Financial Summary</h3>
+            <div className="space-y-8">
+              {(() => {
+                const today = new Date().toISOString().split('T')[0];
+                const houseSales = salesLogs.filter(s => s.houseId === activeHouse?.id && s.date === today);
+                const totalSold = houseSales.reduce((acc, s) => acc + s.quantity, 0);
+                const totalIncome = houseSales.reduce((acc, s) => acc + s.total, 0);
 
-            <div className="bg-white p-6 border border-slate-200 shadow-sm relative">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="font-bold text-xs uppercase tracking-widest text-slate-700">Master Price Index</h3>
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-                </div>
-                <div className="space-y-3">
-                    {masterPrices.map((p) => (
-                        <div key={p.id} className="flex justify-between items-center p-3 border border-slate-100 bg-slate-50/50 hover:bg-white transition-colors">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{p.name}</span>
-                            <span className="text-xs font-black italic text-slate-800">{formatCurrency(p.price)}</span>
-                        </div>
-                    ))}
-                </div>
-                <p className="text-[9px] text-slate-400 mt-6 font-medium italic">* Terakhir diupdate: Konfigurasi Master</p>
+                return (
+                  <>
+                    <div>
+                      <p className="text-3xl font-black italic tracking-tighter">{totalSold.toLocaleString()} Butir</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Total Terjual (Today)</p>
+                    </div>
+                    <div>
+                      <p className="text-3xl font-black italic text-slate-600 tracking-tighter">{farmSettings.wasteFreePercentage}%</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Target Waste & Free Goods</p>
+                    </div>
+                    <div className="pt-8 border-t border-slate-800">
+                      <p className="text-3xl font-black text-emerald-400 italic tracking-tighter">{formatCurrency(totalIncome)}</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Cashflow {activeHouse?.name} Today</p>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
+          </div>
+
+          <div className="bg-white p-6 border border-slate-200 shadow-sm relative">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-bold text-xs uppercase tracking-widest text-slate-700">Master Price Index</h3>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+            </div>
+            <div className="space-y-3">
+              {masterPrices.map((p) => (
+                <div key={p.id} className="flex justify-between items-center p-3 border border-slate-100 bg-slate-50/50 hover:bg-white transition-colors">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{p.name}</span>
+                  <span className="text-xs font-black italic text-slate-800">{formatCurrency(p.price)}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[9px] text-slate-400 mt-6 font-medium italic">* Terakhir diupdate: Konfigurasi Master</p>
+          </div>
         </div>
       </div>
     </div>
